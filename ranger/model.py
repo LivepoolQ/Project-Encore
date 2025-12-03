@@ -5,6 +5,7 @@ from qpid.model import Model, layers, transformer
 from qpid.training import Structure
 
 from .__args import RangerArgs
+from .feedbackLayer import ExpectationLayer, PerceiveLayer
 from ._groupLayer import GroupLayer, LongTermKernel
 from ._trajEncoding import TrajEncoding
 
@@ -34,16 +35,20 @@ class RangerModel(Model):
         # Trajectory and feature encoding
         self.te = TrajEncoding(output_units=self.ranger_args.output_units,
                                input_units=self.dim)
+        self.te_g = TrajEncoding(output_units=self.ranger_args.output_units,
+                                 input_units=self.dim)
         self.te2 = TrajEncoding(output_units=self.ranger_args.output_units * 2,
                                 input_units=self.dim)
-        self.tse = TrajEncoding(output_units=self.ranger_args.output_units * 2, input_units=7)
+        self.tse = TrajEncoding(
+            output_units=self.ranger_args.output_units * 2, input_units=7)
 
-        self.concat_fc = layers.Dense(self.ranger_args.output_units * 4, self.ranger_args.output_units * 4, activation=torch.nn.Tanh)
+        self.concat_fc = layers.Dense(
+            self.ranger_args.output_units * 4, self.ranger_args.output_units * 4, activation=torch.nn.Tanh)
 
         # Linear prediction of obs as the target of transformer
         self.lp = layers.LinearLayerND(
             self.args.obs_frames, self.args.pred_frames, return_full_trajectory=False)
-        
+
         # Backbone
         self.bb = transformer.Transformer(
             num_layers=4,
@@ -72,6 +77,17 @@ class RangerModel(Model):
         self.decoder_fc2 = layers.Dense(self.ranger_args.output_units * 8,
                                         self.args.pred_frames * self.dim)
 
+        # Expectation and Perceive layer
+        self.exp = ExpectationLayer(self.ranger_args.output_units * 4, 
+                                    self.ranger_args.output_units * 4, 
+                                    self.ranger_args.output_units * 2, 
+                                    self.ranger_args.use_activation)
+        
+        self.per = PerceiveLayer(self.ranger_args.output_units * 4, 
+                                    self.ranger_args.output_units * 4, 
+                                    self.ranger_args.output_units * 2, 
+                                    self.ranger_args.use_activation)
+
     def forward(self, inputs, training=None, mask=None, *args, **kwargs):
         obs = self.get_input(inputs, INPUT_TYPES.OBSERVED_TRAJ)
         nei = self.get_input(inputs, INPUT_TYPES.NEIGHBOR_TRAJ)
@@ -83,24 +99,32 @@ class RangerModel(Model):
             # Obs trajectory encoding
             f_obs = self.te(obs)
 
-            f_group = self.te(trajs_group)
+            f_group = self.te_g(trajs_group)
             f_group = (torch.sum(f_group * group_mask[..., None, None], dim=1) + 1e-8) / \
                 (group_num[..., None, None] + 1e-8)
-            
+
             # Concat obs and nei feature
             f = torch.concat([f_obs, f_group], dim=-1)
-        
+
         else:
             f_obs = self.te2(obs)
             f = f_obs
 
+        # Compute expectation 
+        f = self.exp(f)
+
         # Compute Conception and padding
-        nei_trajs = nei * (1 - group_mask[..., None, None]) + group_mask[..., None, None] * INF
+        nei_trajs = nei * \
+            (1 - group_mask[..., None, None]) + \
+            group_mask[..., None, None] * INF
         conception_circle = self.gp(obs, nei)
         f_social = self.tse(conception_circle)
         f_social = torch.repeat_interleave(f_social, torch.tensor(
             f_obs.shape[-2]).to(f_obs.device).to(torch.int32), dim=-2)
-        _f = torch.concat([f_social, f], dim=-1)
+        
+        f_social = self.per(f_social)
+        
+        _f = f_social - f
 
         f = self.concat_fc(_f)
 

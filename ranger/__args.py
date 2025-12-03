@@ -1,3 +1,12 @@
+"""
+@Author: Ziqian Zou
+@Date: 2025-11-18 10:33:02
+@LastEditors: Ziqian Zou
+@LastEditTime: 2025-12-03 17:12:36
+@Description: file content
+@Github: https://github.com/LivepoolQ
+@Copyright 2025 Ziqian Zou, All Rights Reserved.
+"""
 import numpy as np
 
 from qpid.args import DYNAMIC, STATIC, TEMPORARY, EmptyArgs
@@ -25,6 +34,13 @@ class RangerArgs(EmptyArgs):
         Choose whether to use pedestrian groups when calculating SocialCircle.
         """
         return self._arg('use_group', 1, argtype=STATIC, desc_in_model_summary='use_group_model')
+    
+    @property
+    def use_activation(self) -> int:
+        """
+        Choose whether to use activation.
+        """
+        return self._arg('use_activation', 1, argtype=STATIC)
     
     @property
     def group_distance(self) -> int:
