@@ -5,9 +5,9 @@ from qpid.model import Model, layers, transformer
 from qpid.training import Structure
 
 from .__args import RangerArgs
-from .feedbackLayer import ExpectationLayer, PerceiveLayer
 from ._groupLayer import GroupLayer, LongTermKernel
 from ._trajEncoding import TrajEncoding
+from .feedbackLayer import ExpectationLayer, PerceiveLayer
 
 INF = 100000000
 
@@ -26,7 +26,9 @@ class RangerModel(Model):
         self.set_inputs(INPUT_TYPES.OBSERVED_TRAJ, INPUT_TYPES.NEIGHBOR_TRAJ)
 
         # Grouplayer
-        self.gp = GroupLayer(view_angle=self.ranger_args.view_angle)
+        self.gp = GroupLayer(view_angle=self.ranger_args.view_angle, 
+                             use_socialcircle=self.ranger_args.use_socialcircle,
+                             max_partitions=self.ranger_args.partitions)
 
         # Long term kernel function
         self.ltkf = LongTermKernel(
@@ -41,9 +43,12 @@ class RangerModel(Model):
                                 input_units=self.dim)
         self.tse = TrajEncoding(
             output_units=self.ranger_args.output_units * 2, input_units=7)
+        self.tse_2 = TrajEncoding(
+            output_units=self.ranger_args.output_units * 2, input_units=3)
 
-        self.concat_fc = layers.Dense(
-            self.ranger_args.output_units * 4, self.ranger_args.output_units * 4, activation=torch.nn.Tanh)
+        self.concat_fc = layers.Dense(self.ranger_args.output_units * 4, 
+                                      self.ranger_args.output_units * 4, 
+                                      activation=torch.nn.Tanh)
 
         # Linear prediction of obs as the target of transformer
         self.lp = layers.LinearLayerND(
@@ -53,14 +58,40 @@ class RangerModel(Model):
         self.bb = transformer.Transformer(
             num_layers=4,
             d_model=self.args.feature_dim,
-            num_heads=8,
-            dff=512,
+            num_heads=self.args.obs_frames,
+            dff=self.args.feature_dim * 4,
             input_vocab_size=self.dim,
             target_vocab_size=self.dim,
             pe_input=self.args.obs_frames,
             pe_target=self.args.pred_frames + self.args.obs_frames,
             include_top=False
         )
+
+        if self.ranger_args.enable_per_tran:
+            self.bb_lite = transformer.Transformer(
+                num_layers=4,
+                d_model=self.args.feature_dim//2,
+                num_heads=self.args.obs_frames,
+                dff=self.args.feature_dim*2,
+                input_vocab_size=self.args.feature_dim//2,
+                target_vocab_size=self.args.feature_dim//2,
+                pe_input=self.args.obs_frames,
+                pe_target=self.args.obs_frames,
+                include_top=False
+            )
+
+        if self.ranger_args.enable_exp_tran:
+            self.bb_lite_2 = transformer.Transformer(
+                num_layers=4,
+                d_model=self.args.feature_dim//2,
+                num_heads=self.args.obs_frames,
+                dff=self.args.feature_dim*2,
+                input_vocab_size=self.args.feature_dim//2,
+                target_vocab_size=self.args.feature_dim//2,
+                pe_input=self.args.obs_frames,
+                pe_target=self.args.obs_frames,
+                include_top=False
+            )
 
         # Noise encoding
         self.ie = TrajEncoding(self.d, self.d_id)
@@ -109,6 +140,9 @@ class RangerModel(Model):
         else:
             f_obs = self.te2(obs)
             f = f_obs
+        
+        if self.ranger_args.enable_exp_tran:
+            f, _ = self.bb_lite_2(inputs=f, targets=f, training=training)
 
         # Compute expectation 
         f = self.exp(f)
@@ -117,10 +151,19 @@ class RangerModel(Model):
         nei_trajs = nei * \
             (1 - group_mask[..., None, None]) + \
             group_mask[..., None, None] * INF
-        conception_circle = self.gp(obs, nei)
-        f_social = self.tse(conception_circle)
-        f_social = torch.repeat_interleave(f_social, torch.tensor(
-            f_obs.shape[-2]).to(f_obs.device).to(torch.int32), dim=-2)
+        
+        if self.ranger_args.use_socialcircle:
+            conception_circle = self.gp(obs, nei)
+            f_social = self.tse_2(conception_circle)
+        else:
+            conception_circle = self.gp(obs, nei_trajs)
+
+            f_social = self.tse(conception_circle)
+            f_social = torch.repeat_interleave(f_social, torch.tensor(
+                f_obs.shape[-2]).to(f_obs.device).to(torch.int32), dim=-2)
+        
+        if self.ranger_args.enable_per_tran:
+            f_social, _ = self.bb_lite(inputs=f_social, targets=f_social, training=training)
         
         f_social = self.per(f_social)
         

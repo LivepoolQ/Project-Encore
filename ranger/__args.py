@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2025-11-18 10:33:02
 @LastEditors: Ziqian Zou
-@LastEditTime: 2025-12-03 17:12:36
+@LastEditTime: 2025-12-04 15:36:11
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2025 Ziqian Zou, All Rights Reserved.
@@ -66,3 +66,31 @@ class RangerArgs(EmptyArgs):
         Value of conception view field.
         """
         return self._arg('view_angle', np.pi, argtype=STATIC)
+    
+    @property
+    def use_socialcircle(self) -> int:
+        """
+        
+        """
+        return self._arg('use_socialcircle', 1, argtype=STATIC)
+    
+    @property
+    def partitions(self) -> int:
+        """
+        
+        """
+        return self._arg('partitions', 8, argtype=STATIC)
+    
+    @property
+    def enable_per_tran(self) -> int:
+        """
+        
+        """
+        return self._arg('enable_per_tran', 1, argtype=STATIC)
+    
+    @property
+    def enable_exp_tran(self) -> int:
+        """
+        
+        """
+        return self._arg('enable_exp_tran', 1, argtype=STATIC)

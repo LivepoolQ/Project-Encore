@@ -31,6 +31,7 @@ class ExpectationLayer(torch.nn.Module):
     def forward(self, feature: torch.tensor):
 
         return self.fc2(self.fc1(feature))
+    
 
 class PerceiveLayer(torch.nn.Module):
 
