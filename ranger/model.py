@@ -5,11 +5,9 @@ from qpid.model import Model, layers, transformer
 from qpid.training import Structure
 
 from .__args import RangerArgs
-from ._groupLayer import GroupLayer, LongTermKernel
+from ._groupLayer import INF, GroupLayer, LongTermKernel
 from ._trajEncoding import TrajEncoding
 from .feedbackLayer import ExpectationLayer, PerceiveLayer
-
-INF = 100000000
 
 
 class RangerModel(Model):

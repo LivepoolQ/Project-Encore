@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2025-11-25 10:28:07
 @LastEditors: Ziqian Zou
-@LastEditTime: 2025-12-04 11:14:27
+@LastEditTime: 2025-12-09 15:48:06
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2025 Ziqian Zou, All Rights Reserved.
@@ -18,7 +18,7 @@ MU = 0.00001
 
 class GroupLayer(torch.nn.Module):
 
-    def __init__(self, 
+    def __init__(self,
                  max_partitions: int,
                  view_angle: float = np.pi,
                  use_socialcircle: int = 1,
@@ -46,14 +46,14 @@ class GroupLayer(torch.nn.Module):
 
         # mask neighbors
         nei_mask = (
-            torch.sum(nei_trajs, dim=[-1, -2]) < (0.05 * INF)).to(dtype=torch.int32)
-        
+            torch.sum(torch.abs(nei_trajs), dim=[-1, -2]) < (0.05 * INF)).to(dtype=torch.int32)
+
         # mask view angle
         view_mask = (torch.abs(nei_dir - obs_dir) <
                      (self.view_angle / 2)).to(dtype=torch.int32)
         left_view_mask = ((nei_dir - obs_dir) > 0).to(dtype=torch.int32)
         right_view_mask = view_mask - left_view_mask
-        
+
         # mask back angle(places out of the view)
         back_mask = 1 - view_mask
 
@@ -115,8 +115,9 @@ class GroupLayer(torch.nn.Module):
 
             if (((m := self.partitions) is not None) and
                     (m > (n := self.partitions))):
-                paddings = torch.tensor([0, 0, 0, m - n, 0, 0])
-                social_circle = torch.nn.functional.pad(social_circle, paddings)
+                paddings = [0, 0, 0, m - n, 0, 0]
+                social_circle = torch.nn.functional.pad(
+                    social_circle, paddings)
 
             return social_circle
 
@@ -126,11 +127,11 @@ class GroupLayer(torch.nn.Module):
             # for neighbors in the back, the conception layer would only consider distance factor
             # calculate conception value in right view
             dis_right = (torch.sum(dis * nei_right,
-                            dim=[-1, -2])) / (torch.sum(nei_right, dim=-1) + MU)
+                                   dim=[-1, -2])) / (torch.sum(nei_right, dim=-1) + MU)
             dir_right = (torch.sum(delta_dir * nei_right,
-                            dim=[-1, -2])) / (torch.sum(nei_right, dim=-1) + MU)
+                                   dim=[-1, -2])) / (torch.sum(nei_right, dim=-1) + MU)
             vel_right = (torch.sum(velocity * nei_right,
-                            dim=[-1, -2])) / (torch.sum(nei_right, dim=-1) + MU)
+                                   dim=[-1, -2])) / (torch.sum(nei_right, dim=-1) + MU)
             con_right = torch.concat(
                 [dis_right[:, None, None], dir_right[:, None, None], vel_right[:, None, None]], dim=-1)
 
@@ -147,7 +148,7 @@ class GroupLayer(torch.nn.Module):
             # calculate conception in the back
             dis_back = (torch.sum(dis * nei_back,
                         dim=[-1, -2])) / (torch.sum(nei_back, dim=-1) + MU)
-            con_back = torch.concat([dis_back[:, None, None]], dim=-1) 
+            con_back = torch.concat([dis_back[:, None, None]], dim=-1)
 
             # add right and left
             con = torch.concat([con_right, con_left, con_back], dim=-1)
@@ -172,10 +173,16 @@ class LongTermKernel(torch.nn.Module):
 
         # final step distance(fde)
         final_vec = x_nei_2d[..., -1:, :] - x_ego_2d[:, None, -1:, :]
+        
+        long_term_sq = torch.sum(long_term_dis ** 2, dim=(-1, -2))
+        final_vec_sq = torch.sum(final_vec ** 2, dim=(-1, -2))
 
-        group_mask = ((torch.sum(long_term_dis ** 2,
-                                 dim=[-1, -2]) < self.group_distance).to(dtype=torch.int32)) * ((torch.sum(final_vec ** 2, dim=[-1, -2]) < self.group_distance/self.obs_steps).to(dtype=torch.int32))
-        trajs_group = (x_nei_2d * group_mask[..., None, None]).to(dtype=torch.float32)
+        group_mask = (long_term_sq < self.group_distance) & \
+                    (final_vec_sq < (self.group_distance / self.obs_steps))
+        group_mask = group_mask.int()
+
+        trajs_group = (
+            x_nei_2d * group_mask[..., None, None]).to(dtype=torch.float32)
         group_num = torch.sum(group_mask, dim=-1)
 
         return group_mask, trajs_group, group_num

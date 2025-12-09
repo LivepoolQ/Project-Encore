@@ -28,7 +28,7 @@ class ExpectationLayer(torch.nn.Module):
             self.fc1 = torch.nn.Linear(self.input_units, self.hidden_units)
             self.fc2 = torch.nn.Linear(self.hidden_units, self.output_units)
 
-    def forward(self, feature: torch.tensor):
+    def forward(self, feature: torch.Tensor):
 
         return self.fc2(self.fc1(feature))
     
@@ -57,6 +57,6 @@ class PerceiveLayer(torch.nn.Module):
             self.fc1 = torch.nn.Linear(self.input_units, self.hidden_units)
             self.fc2 = torch.nn.Linear(self.hidden_units, self.output_units)
 
-    def forward(self, feature: torch.tensor):
+    def forward(self, feature: torch.Tensor) -> torch.Tensor:
 
         return self.fc2(self.fc1(feature))
