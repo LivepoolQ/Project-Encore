@@ -3,12 +3,13 @@ import torch
 from qpid.constant import INPUT_TYPES
 from qpid.model import Model, layers, transformer
 from qpid.training import Structure
+from qpid.training.loss import l2
 
 from .__args import RangerArgs
-from ._groupLayer import GroupLayer, LongTermKernel
+from ._groupLayer import GroupLayer, LongTermKernel, INF
 from ._trajEncoding import TrajEncoding
-
-INF = 100000000
+from .egoPredictor import EgoPredictor
+from .egoLoss import EgoLoss
 
 
 class RangerModel(Model):
@@ -25,7 +26,8 @@ class RangerModel(Model):
         self.set_inputs(INPUT_TYPES.OBSERVED_TRAJ, INPUT_TYPES.NEIGHBOR_TRAJ)
 
         # Grouplayer
-        self.gp = GroupLayer(view_angle=self.ranger_args.view_angle)
+        self.gp = GroupLayer(output_units=self.ranger_args.output_units,
+                             view_angle=self.ranger_args.view_angle)
 
         # Long term kernel function
         self.ltkf = LongTermKernel(
@@ -36,14 +38,16 @@ class RangerModel(Model):
                                input_units=self.dim)
         self.te2 = TrajEncoding(output_units=self.ranger_args.output_units * 2,
                                 input_units=self.dim)
-        self.tse = TrajEncoding(output_units=self.ranger_args.output_units * 2, input_units=7)
+        self.tse = TrajEncoding(output_units=self.ranger_args.output_units *
+                                2, input_units=self.ranger_args.output_units * 3)
 
-        self.concat_fc = layers.Dense(self.ranger_args.output_units * 4, self.ranger_args.output_units * 4, activation=torch.nn.Tanh)
+        self.concat_fc = layers.Dense(
+            self.ranger_args.output_units * 4, self.ranger_args.output_units * 4, activation=torch.nn.Tanh)
 
         # Linear prediction of obs as the target of transformer
         self.lp = layers.LinearLayerND(
             self.args.obs_frames, self.args.pred_frames, return_full_trajectory=False)
-        
+
         # Backbone
         self.bb = transformer.Transformer(
             num_layers=4,
@@ -72,9 +76,61 @@ class RangerModel(Model):
         self.decoder_fc2 = layers.Dense(self.ranger_args.output_units * 8,
                                         self.args.pred_frames * self.dim)
 
+        # Ego predictor
+        self.ego_predictor = EgoPredictor(
+            obs_steps=self.args.obs_frames//4,
+            pred_steps=self.args.obs_frames//4,
+            insights=5,
+            traj_dim=self.dim,
+            feature_dim=self.args.feature_dim,
+        )
+
     def forward(self, inputs, training=None, mask=None, *args, **kwargs):
         obs = self.get_input(inputs, INPUT_TYPES.OBSERVED_TRAJ)
         nei = self.get_input(inputs, INPUT_TYPES.NEIGHBOR_TRAJ)
+
+        # -------------
+        # Ego predictor
+        # -------------
+        if training:
+            x_nei_pred_int = self.ego_predictor(
+                ego_traj=obs[..., :self.args.obs_frames//4, :],
+                nei_trajs=nei[..., :self.args.obs_frames//4, :]
+            )
+
+        else:
+            x_nei_pred_int = None
+
+        # Use egopredictor predict 4, 5, 6, 7 frame
+
+        x_nei_pred_45 = self.ego_predictor(
+            ego_traj=obs[..., self.args.obs_frames //
+                         4:self.args.obs_frames//2, :],
+            nei_trajs=nei[..., self.args.obs_frames //
+                          4:self.args.obs_frames//2, :]
+        )
+        x_nei_pred_67 = self.ego_predictor(
+            ego_traj=obs[..., self.args.obs_frames //
+                         2:self.args.obs_frames//2 + self.args.obs_frames//4, :],
+            nei_trajs=torch.mean(x_nei_pred_45, dim=-3)
+        )
+
+        x_nei_pred_4567 = torch.concat([x_nei_pred_45, x_nei_pred_67], dim=-2)
+        x_nei_pred_4567 = torch.mean(x_nei_pred_4567, dim=-3)
+
+        x_nei = torch.concat(
+            [nei[..., :self.args.obs_frames, :], x_nei_pred_4567], dim=-2)
+
+        nei_diff = nei[..., self.args.obs_frames//2:, :] - x_nei_pred_4567
+        nei_diff_value = torch.sum(torch.norm(nei_diff, p=2, dim=-1), dim=-1)
+
+        # mask neighbors
+        nei_mask = (
+            torch.sum(torch.abs(nei), dim=[-1, -2]) < (0.05 * INF)).to(dtype=torch.int32)
+
+        nei_diff_value = nei_diff_value * nei_mask
+
+        ego_atten = torch.softmax(nei_diff_value, dim=-1)
 
         group_mask, trajs_group, group_num = self.ltkf(obs, nei)
 
@@ -86,19 +142,21 @@ class RangerModel(Model):
             f_group = self.te(trajs_group)
             f_group = (torch.sum(f_group * group_mask[..., None, None], dim=1) + 1e-8) / \
                 (group_num[..., None, None] + 1e-8)
-            
+
             # Concat obs and nei feature
             f = torch.concat([f_obs, f_group], dim=-1)
-        
+
         else:
             f_obs = self.te2(obs)
             f = f_obs
 
         # Compute Conception and padding
-        nei_trajs = nei * (1 - group_mask[..., None, None]) + group_mask[..., None, None] * INF
-        conception_circle = self.gp(obs, nei)
+        nei_trajs = nei * \
+            (1 - group_mask[..., None, None]) + \
+            group_mask[..., None, None] * INF
+        conception_circle = self.gp(obs, nei, ego_atten)
         f_social = self.tse(conception_circle)
-        f_social = torch.repeat_interleave(f_social, torch.tensor(
+        f_social = torch.repeat_interleave(f_social[..., None, :], torch.tensor(
             f_obs.shape[-2]).to(f_obs.device).to(torch.int32), dim=-2)
         _f = torch.concat([f_social, f], dim=-1)
 
@@ -144,8 +202,18 @@ class RangerModel(Model):
 
         Y = torch.concat(all_predictions, dim=-3)
 
-        return Y
+        return (Y,
+                nei[..., self.args.obs_frames//4:self.args.obs_frames//2, :],
+                x_nei_pred_int)
 
 
 class Ranger(Structure):
     MODEL_TYPE = RangerModel
+
+    def __init__(self, args=None,
+                 manager=None,
+                 name='Train Manager'):
+
+        super().__init__(args, manager, name)
+
+        self.loss.set({l2: 1.0, EgoLoss: 0.4})
