@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2025-11-25 10:28:07
 @LastEditors: Ziqian Zou
-@LastEditTime: 2025-12-15 09:57:48
+@LastEditTime: 2025-12-19 17:23:51
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2025 Ziqian Zou, All Rights Reserved.
@@ -32,7 +32,7 @@ class GroupLayer(torch.nn.Module):
         self.proj_left = torch.nn.Linear(3, self.output_units)
         self.proj_rear = torch.nn.Linear(1, self.output_units)
 
-    def forward(self, trajs: torch.Tensor, nei_trajs: torch.Tensor, ego_atten: torch.Tensor):
+    def forward(self, trajs: torch.Tensor, nei_trajs: torch.Tensor):
         # `nei_trajs` are relative values to target agents' last obs step
         obs_vector = trajs[..., -1:, :] - trajs[..., 0:1, :]
         nei_vector = nei_trajs[..., -1, :] - nei_trajs[..., 0, :]
@@ -68,11 +68,11 @@ class GroupLayer(torch.nn.Module):
         nei_back = back_mask * nei_mask
 
         # calculate atten in each region
-        atten_left = torch.sum(left_view_mask * ego_atten,
+        atten_left = torch.sum(left_view_mask * 1,
                                dim=-1) / (torch.sum(nei_left, dim=-1) + MU)
         atten_right = torch.sum(
-            right_view_mask * ego_atten, dim=-1) / (torch.sum(nei_right, dim=-1) + MU)
-        atten_back = torch.sum(back_mask * ego_atten, dim=-1) / \
+            right_view_mask * 1, dim=-1) / (torch.sum(nei_right, dim=-1) + MU)
+        atten_back = torch.sum(back_mask * 1, dim=-1) / \
             (torch.sum(nei_back, dim=-1) + MU)
         _atten = torch.cat(
             [atten_right[:, None], atten_left[:, None], atten_back[:, None]], dim=-1)

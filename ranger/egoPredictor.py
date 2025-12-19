@@ -2,14 +2,14 @@
 @Author: Conghao Wong
 @Date: 2025-12-09 15:34:52
 @LastEditors: Ziqian Zou
-@LastEditTime: 2025-12-11 14:57:04
+@LastEditTime: 2025-12-19 16:37:17
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
 
 import torch
 
-from qpid.model import layers
+from qpid.model import layers, transformer
 
 from .utils import KernelLayer
 
@@ -24,6 +24,7 @@ class EgoPredictor(torch.nn.Module):
                  insights: int,
                  traj_dim: int,
                  feature_dim: int,
+                 use_ego_tran: int | bool,
                  *args, **kwargs):
 
         super().__init__(*args, **kwargs)
@@ -35,21 +36,38 @@ class EgoPredictor(torch.nn.Module):
         self.d = feature_dim
 
         self.insights = insights
+        self.use_ego_tran = use_ego_tran
 
         # Simple trajectory predictor, similar to the reverberation transform
         self.outer = layers.OuterLayer(self.t_h, self.t_h)
         self.reverberation_predictor = KernelLayer(self.d, self.d, self.t_f)
         self.insight_predictor = KernelLayer(self.d, self.d, self.insights)
 
-        # Simple trajectory encoder and decoder
-        self.encoder = torch.nn.Sequential(
+        if self.use_ego_tran:
+            # Simple trajectory encoder and decoder
+            self.encoder = transformer.TransformerEncoder(
+                num_layers=4,
+                num_heads=4,
+                dim_model=self.d,
+                dim_forward=self.d,
+                steps=self.t_h,
+                dim_input=self.d_traj,
+                dim_output=self.d_traj,
+                include_top=False)
+
+            self.traj_embed = layers.Dense(
+            input_units=self.d_traj,
+            output_units=self.d,
+            activation=torch.nn.Tanh)
+
+        else:
+            self.encoder = torch.nn.Sequential(
             layers.Dense(self.d_traj, self.d, torch.nn.ReLU),
             layers.Dense(self.d, self.d, torch.nn.ReLU),
             layers.Dense(self.d, self.d, torch.nn.ReLU),
             layers.Dense(self.d, self.d, torch.nn.ReLU),
             layers.Dense(self.d, self.d, torch.nn.ReLU),
-            layers.Dense(self.d, self.d, torch.nn.Tanh),
-        )
+            layers.Dense(self.d, self.d, torch.nn.Tanh)) 
 
         self.decoder = layers.Dense(self.d, self.d_traj)
 
@@ -68,11 +86,14 @@ class EgoPredictor(torch.nn.Module):
 
         # Encode features together
         # Including the insight feature and neighbor features
-        f_pack = self.encoder(trajs)
+        if self.use_ego_tran:
+            f_pack = self.encoder(self.traj_embed(trajs))
+        else:
+            f_pack = self.encoder(trajs)
 
         # Unpack features
         f_insight = f_pack[..., 0, :, :]    # (batch, t_h, d)
-        f_nei = f_pack[..., 1:, :, :]       # (batch, nei, t_h, d)
+        f_nei = f_pack[..., :, :, :]       # (batch, nei, t_h, d)
 
         # Compute kernels
         # (batch, nei, t_h, t_f)
@@ -104,6 +125,6 @@ class EgoPredictor(torch.nn.Module):
         pred = self.decoder(f)              # (batch, nei, insights, t_f, dim)
 
         # Move back predictions
-        pred = pred + positions[..., 1:, None, :, :]
+        pred = pred + positions[..., :, None, :, :]
 
-        return pred
+        return pred[:, 1:], pred[:, 0]

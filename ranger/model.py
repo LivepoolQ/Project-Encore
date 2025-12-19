@@ -21,6 +21,8 @@ class RangerModel(Model):
         self.args._set_default('K_train', 1)
         self.ranger_args = self.args.register_subargs(
             RangerArgs, 'ranger_args')
+        self.N = 4
+        self.ido = self.index_obs
 
         # Set model inputs
         self.set_inputs(INPUT_TYPES.OBSERVED_TRAJ, INPUT_TYPES.NEIGHBOR_TRAJ)
@@ -58,8 +60,7 @@ class RangerModel(Model):
             target_vocab_size=self.dim,
             pe_input=self.args.obs_frames,
             pe_target=self.args.pred_frames + self.args.obs_frames,
-            include_top=False
-        )
+            include_top=False)
 
         # Noise encoding
         self.ie = TrajEncoding(self.d, self.d_id)
@@ -80,81 +81,115 @@ class RangerModel(Model):
         self.ego_predictor = EgoPredictor(
             obs_steps=self.args.obs_frames//4,
             pred_steps=self.args.obs_frames//4,
-            insights=5,
+            insights=self.ranger_args.insights_num,
             traj_dim=self.dim,
             feature_dim=self.args.feature_dim,
-        )
+            use_ego_tran=self.ranger_args.use_ego_tran)
+
+        if self.ranger_args.use_lite_egopredictor:
+            self.ego_linear_predictor = layers.LinearLayerND(
+                obs_frames=self.stage_len*2,
+                pred_frames=self.stage_len*2,
+                return_full_trajectory=False)
+            
+    def index_obs(self, n: int):
+        """
+        Decide range of stage.  
+
+        :param n: n starts from 1.
+        """
+        return n * (self.stage_len) - 1 
+
+    @property
+    def stage_len(self):
+        return self.args.obs_frames // self.N
 
     def forward(self, inputs, training=None, mask=None, *args, **kwargs):
         obs = self.get_input(inputs, INPUT_TYPES.OBSERVED_TRAJ)
         nei = self.get_input(inputs, INPUT_TYPES.NEIGHBOR_TRAJ)
 
-        # -------------
-        # Ego predictor
-        # -------------
-        if training:
-            x_nei_pred_int = self.ego_predictor(
-                ego_traj=obs[..., :self.args.obs_frames//4, :],
-                nei_trajs=nei[..., :self.args.obs_frames//4, :]
-            )
-
-        else:
-            x_nei_pred_int = None
-
-        # Use egopredictor predict 4, 5, 6, 7 frame
-
-        x_nei_pred_45 = self.ego_predictor(
-            ego_traj=obs[..., self.args.obs_frames //
-                         4:self.args.obs_frames//2, :],
-            nei_trajs=nei[..., self.args.obs_frames //
-                          4:self.args.obs_frames//2, :]
-        )
-        x_nei_pred_67 = self.ego_predictor(
-            ego_traj=obs[..., self.args.obs_frames //
-                         2:self.args.obs_frames//2 + self.args.obs_frames//4, :],
-            nei_trajs=torch.mean(x_nei_pred_45, dim=-3)
-        )
-
-        x_nei_pred_4567 = torch.concat([x_nei_pred_45, x_nei_pred_67], dim=-2)
-        x_nei_pred_4567 = torch.mean(x_nei_pred_4567, dim=-3)
-
-        x_nei = torch.concat(
-            [nei[..., :self.args.obs_frames, :], x_nei_pred_4567], dim=-2)
-
-        nei_diff = nei[..., self.args.obs_frames//2:, :] - x_nei_pred_4567
-        nei_diff_value = torch.sum(torch.norm(nei_diff, p=2, dim=-1), dim=-1)
-
         # mask neighbors
         nei_mask = (
             torch.sum(torch.abs(nei), dim=[-1, -2]) < (0.05 * INF)).to(dtype=torch.int32)
 
-        nei_diff_value = nei_diff_value * nei_mask
+        if (t:=self.ranger_args.group_type) in [0, 1]:
+            if t == 0:
+                x_nei_pred_3_4 = None
+                x_nei_pred_5_6 = None
 
-        ego_atten = torch.softmax(nei_diff_value, dim=-1)
+            # -------------
+            # Ego predictor
+            # -------------
+            elif t == 1:
+                if training:
+                    obs_2 = obs[..., self.ido(1):self.ido(2), :]
+                    nei_2 = nei[..., self.ido(1):self.ido(2), :]
+                    obs_3 = obs[..., self.ido(2):self.ido(3), :]
+                    nei_3 = nei[..., self.ido(2):self.ido(3), :]
+                    x_nei_pred_3, _ = self.ego_predictor(
+                        ego_traj=obs_2,
+                        nei_trajs=nei_2
+                    )
+                    x_nei_pred_4, _ = self.ego_predictor(
+                        ego_traj=obs_3,
+                        nei_trajs=nei_3
+                    )
+                    x_nei_pred_3_4 = torch.concat([
+                        x_nei_pred_3,
+                        x_nei_pred_4
+                    ], dim=-2)
+                    
+                else:
+                    x_nei_pred_3_4 = None
+
+                if not self.ranger_args.use_lite_egopredictor:
+                    # Use egopredictor predict stage4 -> stage5
+                    x_nei_pred_5, x_ego_pred_5 = self.ego_predictor(
+                        ego_traj=obs[..., self.ido(3):self.ido(4), :],
+                        nei_trajs=nei[..., self.ido(3):self.ido(4), :]
+                    )
+                    x_nei_pred_6, _ = self.ego_predictor(
+                        ego_traj=obs[..., self.ido(3):self.ido(4), :],
+                        nei_trajs=torch.mean(x_nei_pred_5, dim=-3)
+                    )
+
+                    x_nei_pred_5_6 = torch.concat([x_nei_pred_5, x_nei_pred_6], dim=-2)
+                    x_nei_pred_5_6 = torch.mean(x_nei_pred_5_6, dim=-3)
+
+                # -------------
+                # Linear variation
+                # -------------
+                else:
+                    x_nei_pred_5_6 = self.ego_linear_predictor(nei[..., self.ido(2):self.ido(4), :])
+
+                nei = torch.concat([nei[..., self.ido(2):self.ido(4), :], x_nei_pred_5_6], dim=-2)    
+            
+            elif t == 2:
+                raise ValueError
 
         group_mask, trajs_group, group_num = self.ltkf(obs, nei)
 
-        if self.ranger_args.use_group:
+        # Obs trajectory encoding
+        f_obs = self.te(obs)
 
-            # Obs trajectory encoding
-            f_obs = self.te(obs)
+        f_group = self.te(trajs_group)
+        f_group = (torch.sum(f_group * group_mask[..., None, None], dim=1) + 1e-8) / \
+            (group_num[..., None, None] + 1e-8)
 
-            f_group = self.te(trajs_group)
-            f_group = (torch.sum(f_group * group_mask[..., None, None], dim=1) + 1e-8) / \
-                (group_num[..., None, None] + 1e-8)
+        # Concat obs and nei feature
+        f = torch.concat([f_obs, f_group], dim=-1)
 
-            # Concat obs and nei feature
-            f = torch.concat([f_obs, f_group], dim=-1)
-
-        else:
-            f_obs = self.te2(obs)
-            f = f_obs
 
         # Compute Conception and padding
         nei_trajs = nei * \
             (1 - group_mask[..., None, None]) + \
             group_mask[..., None, None] * INF
-        conception_circle = self.gp(obs, nei, ego_atten)
+        
+        # -------------
+        # Conception Module
+        # -------------
+
+        conception_circle = self.gp(obs, nei_trajs)
         f_social = self.tse(conception_circle)
         f_social = torch.repeat_interleave(f_social[..., None, :], torch.tensor(
             f_obs.shape[-2]).to(f_obs.device).to(torch.int32), dim=-2)
@@ -203,8 +238,9 @@ class RangerModel(Model):
         Y = torch.concat(all_predictions, dim=-3)
 
         return (Y,
-                nei[..., self.args.obs_frames//4:self.args.obs_frames//2, :],
-                x_nei_pred_int)
+                nei[..., self.index_obs(2):self.index_obs(4), :],
+                x_nei_pred_3_4,
+                x_nei_pred_5_6)
 
 
 class Ranger(Structure):
@@ -216,4 +252,11 @@ class Ranger(Structure):
 
         super().__init__(args, manager, name)
 
-        self.loss.set({l2: 1.0, EgoLoss: 0.4})
+        self.ranger_args = self.args.register_subargs(
+            RangerArgs, 'ranger_args')
+        if ((not self.ranger_args.use_lite_egopredictor) 
+            and (self.ranger_args.group_type == 1)):
+            self.loss.set({l2: self.ranger_args.l2_loss_ratio, 
+                           EgoLoss: self.ranger_args.ego_loss_ratio})
+        else:
+            self.loss.set({l2: 1.0})
