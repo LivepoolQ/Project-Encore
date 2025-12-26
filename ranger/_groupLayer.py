@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2025-11-25 10:28:07
 @LastEditors: Ziqian Zou
-@LastEditTime: 2025-12-19 17:23:51
+@LastEditTime: 2025-12-25 18:18:27
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2025 Ziqian Zou, All Rights Reserved.
@@ -94,7 +94,7 @@ class GroupLayer(torch.nn.Module):
         # calculate neighbors' moving direction
         nei_move_dir_vec = nei_trajs[..., -1:, :] - nei_trajs[..., -2:-1, :]
         nei_move_dir = torch.atan2(
-            nei_move_dir_vec[..., 0], nei_move_dir_vec[..., 1])
+            nei_move_dir_vec[..., 0] + MU, nei_move_dir_vec[..., 1] + MU)
         nei_move_dir = nei_move_dir % (2*np.pi)
         delta_dir = torch.squeeze(
             (nei_move_dir - obs_dir[:, None, ...]), dim=-1)

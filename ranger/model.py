@@ -6,10 +6,10 @@ from qpid.training import Structure
 from qpid.training.loss import l2
 
 from .__args import RangerArgs
-from ._groupLayer import GroupLayer, LongTermKernel, INF
+from ._groupLayer import INF, GroupLayer, LongTermKernel
 from ._trajEncoding import TrajEncoding
-from .egoPredictor import EgoPredictor
 from .egoLoss import EgoLoss
+from .egoPredictor import EgoPredictor
 
 
 class RangerModel(Model):
@@ -23,6 +23,7 @@ class RangerModel(Model):
             RangerArgs, 'ranger_args')
         self.N = 4
         self.ido = self.index_obs
+        self.recurrent = False
 
         # Set model inputs
         self.set_inputs(INPUT_TYPES.OBSERVED_TRAJ, INPUT_TYPES.NEIGHBOR_TRAJ)
@@ -79,91 +80,92 @@ class RangerModel(Model):
 
         # Ego predictor
         self.ego_predictor = EgoPredictor(
-            obs_steps=self.args.obs_frames//4,
-            pred_steps=self.args.obs_frames//4,
+            obs_steps=self.stage_len,
+            pred_steps=self.stage_len,
             insights=self.ranger_args.insights_num,
             traj_dim=self.dim,
             feature_dim=self.args.feature_dim,
-            use_ego_tran=self.ranger_args.use_ego_tran)
+            backbone=self.ranger_args.ego_predictor_type,
+            capacity=self.ranger_args.ego_capacity,
+            recurrent=self.recurrent)
 
-        if self.ranger_args.use_lite_egopredictor:
-            self.ego_linear_predictor = layers.LinearLayerND(
-                obs_frames=self.stage_len*2,
-                pred_frames=self.stage_len*2,
-                return_full_trajectory=False)
-            
     def index_obs(self, n: int):
         """
         Decide range of stage.  
 
         :param n: n starts from 1.
         """
-        return n * (self.stage_len) - 1 
+        return n * (self.stage_len)
 
     @property
     def stage_len(self):
         return self.args.obs_frames // self.N
 
     def forward(self, inputs, training=None, mask=None, *args, **kwargs):
-        obs = self.get_input(inputs, INPUT_TYPES.OBSERVED_TRAJ)
-        nei = self.get_input(inputs, INPUT_TYPES.NEIGHBOR_TRAJ)
+        # --------------------
+        # MARK: - Preprocesses
+        # --------------------
+        obs_original = self.get_input(inputs, INPUT_TYPES.OBSERVED_TRAJ)
+        nei_original = self.get_input(inputs, INPUT_TYPES.NEIGHBOR_TRAJ)
 
         # mask neighbors
+        obs = obs_original
+        nei = nei_original
         nei_mask = (
             torch.sum(torch.abs(nei), dim=[-1, -2]) < (0.05 * INF)).to(dtype=torch.int32)
 
-        if (t:=self.ranger_args.group_type) in [0, 1]:
+        nei = torch.concat([obs[..., None, :, :], nei], dim=-3)
+
+        if (t := self.ranger_args.group_type) in [0, 1]:
+            # --------------------
+            # MARK: - Bare Group Model
+            # --------------------
             if t == 0:
                 x_nei_pred_3_4 = None
                 x_nei_pred_5_6 = None
 
-            # -------------
-            # Ego predictor
-            # -------------
+            # --------------------
+            # MARK: - Ego predictor
+            # --------------------
+            # | 1 | 2 | 3 | 4 |
+            # |<---- obs ---->|
             elif t == 1:
+                [a, b, c, d] = [1, 2, 2, 3] if self.recurrent \
+                    else [0, 2, 0, 2]
                 if training:
-                    obs_2 = obs[..., self.ido(1):self.ido(2), :]
-                    nei_2 = nei[..., self.ido(1):self.ido(2), :]
-                    obs_3 = obs[..., self.ido(2):self.ido(3), :]
-                    nei_3 = nei[..., self.ido(2):self.ido(3), :]
-                    x_nei_pred_3, _ = self.ego_predictor(
-                        ego_traj=obs_2,
-                        nei_trajs=nei_2
+                    x_nei_pred_3_4 = self.ego_predictor.implement(
+                        ego_s1=obs[..., self.ido(a):self.ido(b), :],
+                        ego_s2=obs[..., self.ido(c):self.ido(d), :],
+                        nei_s1=nei[..., self.ido(a):self.ido(b), :],
+                        nei_s2=nei[..., self.ido(c):self.ido(d), :],
+                        training=training,
                     )
-                    x_nei_pred_4, _ = self.ego_predictor(
-                        ego_traj=obs_3,
-                        nei_trajs=nei_3
-                    )
-                    x_nei_pred_3_4 = torch.concat([
-                        x_nei_pred_3,
-                        x_nei_pred_4
-                    ], dim=-2)
-                    
+                    nei_pred_train = x_nei_pred_3_4[..., 1:, :, :, :]
+
                 else:
-                    x_nei_pred_3_4 = None
+                    nei_pred_train = None
 
-                if not self.ranger_args.use_lite_egopredictor:
-                    # Use egopredictor predict stage4 -> stage5
-                    x_nei_pred_5, x_ego_pred_5 = self.ego_predictor(
-                        ego_traj=obs[..., self.ido(3):self.ido(4), :],
-                        nei_trajs=nei[..., self.ido(3):self.ido(4), :]
-                    )
-                    x_nei_pred_6, _ = self.ego_predictor(
-                        ego_traj=obs[..., self.ido(3):self.ido(4), :],
-                        nei_trajs=torch.mean(x_nei_pred_5, dim=-3)
-                    )
+                x_nei_pred_5_6, x_nei_pred_5_6_not_mean = self.ego_predictor.implement(
+                    ego_s1=obs[..., self.ido(a + 2):self.ido(b + 2), :],
+                    nei_s1=nei[..., self.ido(a + 2):self.ido(b + 2), :],
+                    return_mean=True,
+                )
 
-                    x_nei_pred_5_6 = torch.concat([x_nei_pred_5, x_nei_pred_6], dim=-2)
-                    x_nei_pred_5_6 = torch.mean(x_nei_pred_5_6, dim=-3)
+                ego_pred_new = x_nei_pred_5_6[..., 0, :, :]
+                nei_pred_new = x_nei_pred_5_6[..., 1:, :, :]
 
-                # -------------
-                # Linear variation
-                # -------------
-                else:
-                    x_nei_pred_5_6 = self.ego_linear_predictor(nei[..., self.ido(2):self.ido(4), :])
+                # Mess up time axis
+                nei = torch.concat([
+                    nei_original[..., self.ido(2):self.ido(4), :],
+                    nei_pred_new], dim=-2
+                )
+                ego = torch.concat([
+                    obs_original[..., self.ido(2):self.ido(4), :],
+                    ego_pred_new
+                ], dim=-2)
 
-                nei = torch.concat([nei[..., self.ido(2):self.ido(4), :], x_nei_pred_5_6], dim=-2)    
-            
+                obs = ego
+
             elif t == 2:
                 raise ValueError
 
@@ -179,12 +181,11 @@ class RangerModel(Model):
         # Concat obs and nei feature
         f = torch.concat([f_obs, f_group], dim=-1)
 
-
         # Compute Conception and padding
         nei_trajs = nei * \
             (1 - group_mask[..., None, None]) + \
             group_mask[..., None, None] * INF
-        
+
         # -------------
         # Conception Module
         # -------------
@@ -237,10 +238,9 @@ class RangerModel(Model):
 
         Y = torch.concat(all_predictions, dim=-3)
 
-        return (Y,
-                nei[..., self.index_obs(2):self.index_obs(4), :],
-                x_nei_pred_3_4,
-                x_nei_pred_5_6)
+        return (torch.flatten(x_nei_pred_5_6_not_mean, -4, -3),
+                nei_original[..., self.index_obs(2):self.index_obs(4), :],
+                nei_pred_train,)
 
 
 class Ranger(Structure):
@@ -254,9 +254,14 @@ class Ranger(Structure):
 
         self.ranger_args = self.args.register_subargs(
             RangerArgs, 'ranger_args')
-        if ((not self.ranger_args.use_lite_egopredictor) 
-            and (self.ranger_args.group_type == 1)):
-            self.loss.set({l2: self.ranger_args.l2_loss_ratio, 
+
+        if (r := self.ranger_args.ego_capacity) > (m := self.args.max_agents):
+            self.log(f'Wrong capacity settings: {r} > {m}!',
+                     level='error', raiseError=ValueError)
+
+        if ((self.ranger_args.group_type == 1)
+                and (self.ranger_args.ego_predictor_type != 'linear')):
+            self.loss.set({l2: self.ranger_args.l2_loss_ratio,
                            EgoLoss: self.ranger_args.ego_loss_ratio})
         else:
             self.loss.set({l2: 1.0})
