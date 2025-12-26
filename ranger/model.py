@@ -238,9 +238,32 @@ class RangerModel(Model):
 
         Y = torch.concat(all_predictions, dim=-3)
 
-        return (torch.flatten(x_nei_pred_5_6_not_mean, -4, -3),
+        returns = [
+            Y,
+        ]
+
+        # Output predictions and labels to compute EgoLoss
+        if training:
+            returns += [
                 nei_original[..., self.index_obs(2):self.index_obs(4), :],
-                nei_pred_train,)
+                nei_pred_train,
+            ]
+
+        # Visualize ego predictor's outputs
+        # This only works in the playground mode
+        elif v := self.ranger_args.vis_ego_predictor:
+            match v:
+                case 1:
+                    e = torch.flatten(nei_pred_new, -4, -3)
+                case 2:
+                    e = nei_pred_new
+                case _:
+                    self.log(f'Wrong `vis_ego_predictor` value recevied: {v}!',
+                             level='error', raiseError=ValueError)
+
+            returns[0] = e
+
+        return returns
 
 
 class Ranger(Structure):

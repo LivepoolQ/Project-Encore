@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2025-12-11 17:21:42
 @LastEditors: Ziqian Zou
-@LastEditTime: 2025-12-26 15:50:28
+@LastEditTime: 2025-12-26 16:27:28
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2025 Ziqian Zou, All Rights Reserved.
@@ -112,3 +112,29 @@ class RangerArgs(EmptyArgs):
         """
         return self._arg('ego_capacity', -1, DYNAMIC,
                          desc_in_model_summary=('Ego predictor', 'ego capacity'))
+
+    @property
+    def vis_ego_predictor(self) -> int:
+        """
+        Choose whether to visualize trajectories forecasted by the ego
+        predictior.
+        It accepts three values:
+
+        - `0`: Do nothing;
+        - `1`: Visualize ego predictor's all predictions;
+        - `2`: Visualize ego predictor's mean predicton for each neighbor.
+
+        NOTE that this arg only works in the *Playground* mode, or the program
+        will be killed immediately.
+        """
+        return self._arg('vis_ego_predictor', 0, argtype=TEMPORARY)
+
+    def _init_all_args(self):
+        super()._init_all_args()
+
+        if ((self.vis_ego_predictor)
+                and (self._terminal_args is not None)
+                and ('playground' not in ''.join(self._terminal_args))):
+            self.log('Arg `vis_ego_predictor` can be only used in the ' +
+                     'playground mode!',
+                     level='error', raiseError=ValueError)
