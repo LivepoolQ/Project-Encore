@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2025-12-11 17:21:42
 @LastEditors: Ziqian Zou
-@LastEditTime: 2025-12-26 16:27:28
+@LastEditTime: 2026-01-04 16:46:09
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2025 Ziqian Zou, All Rights Reserved.
@@ -92,7 +92,7 @@ class RangerArgs(EmptyArgs):
         - `fc`:
         - `tran`:
         """
-        return self._arg('ego_predictor_type', 'tran', argtype=STATIC,
+        return self._arg('ego_predictor_type', 'tran', argtype=DYNAMIC,
                          desc_in_model_summary=('Ego predictor', 'type'))
 
     @property

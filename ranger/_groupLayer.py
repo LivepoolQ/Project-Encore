@@ -2,13 +2,15 @@
 @Author: Ziqian Zou
 @Date: 2025-11-25 10:28:07
 @LastEditors: Ziqian Zou
-@LastEditTime: 2025-12-25 18:18:27
+@LastEditTime: 2026-01-08 16:01:38
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2025 Ziqian Zou, All Rights Reserved.
 """
 import numpy as np
 import torch
+
+from qpid.model import layers
 
 from .__args import RangerArgs
 
@@ -26,17 +28,22 @@ class GroupLayer(torch.nn.Module):
         self.view_angle = view_angle
         self.output_units = output_units
 
-        self.region_emb = torch.nn.Embedding(3, self.output_units)
+        self.region_emb = torch.nn.Sequential(
+            layers.Dense(3, output_units, torch.nn.ReLU),
+            layers.Dense(output_units, output_units, torch.nn.ReLU),
+            layers.Dense(output_units, output_units, torch.nn.Tanh)
+        )
 
-        self.proj_right = torch.nn.Linear(3, self.output_units)
-        self.proj_left = torch.nn.Linear(3, self.output_units)
-        self.proj_rear = torch.nn.Linear(1, self.output_units)
+        self.concat_fc = torch.nn.Sequential(
+            layers.Dense(3, output_units, torch.nn.ReLU),
+            layers.Dense(output_units, output_units * 2, torch.nn.ReLU),
+            layers.Dense(output_units * 2, output_units, torch.nn.Tanh)
+        )
 
-    def forward(self, trajs: torch.Tensor, nei_trajs: torch.Tensor):
+    def forward(self, trajs: torch.Tensor, nei_trajs: torch.Tensor, reshape=True):
         # `nei_trajs` are relative values to target agents' last obs step
-        obs_vector = trajs[..., -1:, :] - trajs[..., 0:1, :]
         nei_vector = nei_trajs[..., -1, :] - nei_trajs[..., 0, :]
-        nei_posion_vector = nei_trajs[..., -1, :]
+        nei_posion_vector = nei_trajs[..., -1, :] - trajs[..., -1:, :]
 
         # obs's direction is simplified to be its moving direction during the last interval
         obs_dir_vec = trajs[..., -1:, :] - trajs[..., -2:-1, :]
@@ -50,43 +57,25 @@ class GroupLayer(torch.nn.Module):
 
         # mask neighbors
         nei_mask = (
-            torch.sum(torch.abs(nei_trajs), dim=[-1, -2]) < (0.05 * INF)).to(dtype=torch.int32)
+            torch.sum(torch.abs(nei_trajs), dim=[-1, -2]) > 0).to(dtype=torch.int32)
 
         # mask view angle
         view_mask = (torch.abs(nei_dir - obs_dir) <
-                     (self.view_angle / 2)).to(dtype=torch.int32)
-        left_view_mask = ((nei_dir - obs_dir) > 0).to(dtype=torch.int32)
+                     (self.view_angle / 2)) * nei_mask.to(dtype=torch.int32)
+        left_view_mask = view_mask * ((nei_dir - obs_dir) > 0).to(dtype=torch.int32)
         right_view_mask = view_mask - left_view_mask
 
         # mask back angle(places out of the view)
-        back_mask = 1 - view_mask
+        back_mask = nei_mask - view_mask
 
         # all real neighbors in left view, right view and back view
         nei_left = left_view_mask * nei_mask
         nei_right = right_view_mask * nei_mask
-        nei_view = nei_left + nei_right
         nei_back = back_mask * nei_mask
 
-        # calculate atten in each region
-        atten_left = torch.sum(left_view_mask * 1,
-                               dim=-1) / (torch.sum(nei_left, dim=-1) + MU)
-        atten_right = torch.sum(
-            right_view_mask * 1, dim=-1) / (torch.sum(nei_right, dim=-1) + MU)
-        atten_back = torch.sum(back_mask * 1, dim=-1) / \
-            (torch.sum(nei_back, dim=-1) + MU)
-        _atten = torch.cat(
-            [atten_right[:, None], atten_left[:, None], atten_back[:, None]], dim=-1)
-        _atten = torch.softmax(_atten, dim=-1)
-
         # region encoding
-        region_ids = torch.tensor([0, 1, 2]).to(_atten.device)
+        region_ids = torch.eye(3).to(trajs.device)
         region_vec = self.region_emb(region_ids)
-
-        # mask view angle
-        view_mask = (torch.abs(nei_dir - obs_dir) <
-                     (self.view_angle / 2)).to(dtype=torch.int32)
-        left_view_mask = ((nei_dir - obs_dir) > 0).to(dtype=torch.int32)
-        right_view_mask = view_mask - left_view_mask
 
         # calculate neighbors' distance
         dis = torch.norm(nei_posion_vector, dim=-1)
@@ -127,19 +116,18 @@ class GroupLayer(torch.nn.Module):
         # calculate conception in the back
         dis_back = (torch.sum(dis * nei_back,
                     dim=[-1, -2])) / (torch.sum(nei_back, dim=-1) + MU)
-        con_back = torch.concat([dis_back[:, None, None]], dim=-1)
+        dir_back = torch.zeros_like(dir_left)
+        vel_back = torch.zeros_like(vel_left)
+        con_back = torch.concat([dis_back[:, None, None], dir_back[:, None, None], vel_back[:, None, None]], dim=-1)
 
-        fr = self.proj_right(con_right)
-        fl = self.proj_left(con_left)
-        fb = self.proj_rear(con_back)
-        f = torch.cat([fr, fl, fb], dim=-2)
-        f = f + region_vec.unsqueeze(0)
-        con = f * _atten.unsqueeze(-1)
-
-        # add right and left
-        # con = torch.concat([con_right, con_left, con_back], dim=-1)
-
-        return con.reshape(con.shape[0], -1)
+        f = torch.concat([con_right, con_left, con_back], dim=-2)
+        f = self.concat_fc(f)
+        f = f + region_vec[None]
+        
+        if reshape:
+            return f.reshape(f.shape[0], -1)
+        else:
+            return f
 
 
 class LongTermKernel(torch.nn.Module):
@@ -149,19 +137,27 @@ class LongTermKernel(torch.nn.Module):
                  *args, **kwargs):
         super().__init__()
 
-        self.group_distance = group_distance
+        self.group_distance = 1.0
         self.obs_steps = obs_steps
 
-    def forward(self, x_ego_2d: torch.Tensor, x_nei_2d: torch.Tensor):
+    def forward(self, x_ego_2d: torch.Tensor, x_nei_2d: torch.Tensor, tolerance: torch.Tensor):
 
-        # Long term distance between neighbors and obs(ade)
-        long_term_dis = x_nei_2d - x_ego_2d[:, None, ...]
+        ego_move = x_ego_2d[..., -1, :] - x_ego_2d[..., 0, :]
+        ego_move_dis = torch.norm(ego_move, p=2, dim=-1)
+        nei_move = x_nei_2d[..., -1, :] - x_nei_2d[..., 0, :]
+        nei_move_dis = torch.norm(nei_move, p=2, dim=-1)
+        vel_ratio = nei_move_dis / ego_move_dis[:, None]
 
-        # final step distance(fde)
-        final_vec = x_nei_2d[..., -1:, :] - x_ego_2d[:, None, -1:, :]
+        group_mask = torch.ones(x_nei_2d.shape[:-2]).to(ego_move.device)
+        # group_mask = _group_mask * ((1 - tolerance) < vel_ratio) * (vel_ratio < (1 + tolerance))
 
-        group_mask = ((torch.sum(long_term_dis ** 2,
-                                 dim=[-1, -2]) < self.group_distance).to(dtype=torch.int32)) * ((torch.sum(final_vec ** 2, dim=[-1, -2]) < self.group_distance/self.obs_steps).to(dtype=torch.int32))
+        for t in range(x_ego_2d.shape[-2]):
+            _vec = x_nei_2d[..., t, :] - x_ego_2d[:, None, t, :]
+            _dis = torch.norm(_vec, p=2, dim=-1)
+            group_mask = group_mask * (_dis < (1.0 + tolerance[..., :-1]) * ego_move_dis[..., None])
+        
+        group_mask = group_mask * ((1 - tolerance[..., -1:]) < vel_ratio) * (vel_ratio < (1 + tolerance[..., -1:]))
+
         trajs_group = (
             x_nei_2d * group_mask[..., None, None]).to(dtype=torch.float32)
         group_num = torch.sum(group_mask, dim=-1)

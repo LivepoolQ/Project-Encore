@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-09 15:34:52
 @LastEditors: Ziqian Zou
-@LastEditTime: 2025-12-26 15:53:49
+@LastEditTime: 2026-01-04 17:10:18
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -34,7 +34,7 @@ class EgoPredictor(torch.nn.Module):
                  capacity: int = -1,
                  *args, **kwargs):
 
-        super().__init__(*args, **kwargs)
+        super().__init__()
 
         self.rec = recurrent
 
@@ -77,7 +77,7 @@ class EgoPredictor(torch.nn.Module):
         elif self.backbone == 'linear':
             self.encoder = layers.LinearLayerND(
                 obs_frames=self.t_h,
-                pred_frames=self.t_f * 2,
+                pred_frames=self.t_f,
                 return_full_trajectory=False)
 
         elif self.backbone == 'fc':
@@ -304,3 +304,53 @@ class EgoPredictor(torch.nn.Module):
             return torch.mean(y, dim=-3), y
         else:
             return y
+
+
+class LinearPrediction(torch.nn.Module):
+
+    def __init__(self, 
+                 obs_steps: int,
+                 pred_steps: int,
+                 insights: int,
+                 recurrent: bool = True,
+                 *args, **kwargs):
+
+        super().__init__()
+
+        self.rec = recurrent
+
+        self.insights = insights
+
+        r = 1 if recurrent else 2
+
+        self.t_h = obs_steps * r
+        self.t_f = pred_steps * r
+
+        self.encoder = layers.LinearLayerND(
+                obs_frames=self.t_h,
+                pred_frames=self.t_f,
+                return_full_trajectory=False)
+        
+    def forward(self, nei_trajs: torch.Tensor):
+
+        y_nei = self.encoder(nei_trajs)
+        y_nei_not_mean = y_nei[..., None, :, :].expand(
+            *y_nei.shape[:-2],
+            self.insights,
+            *y_nei.shape[-2:],
+        )
+
+        return y_nei, y_nei_not_mean
+    
+    def implement(self, 
+                  nei_s1: torch.Tensor,
+                  return_mean: bool = False,
+                  *args, **kwargs):
+        
+        y, y_not_mean = self(nei_s1)
+        
+        if return_mean:
+            return y, y_not_mean
+        else:
+            return y_not_mean
+        
