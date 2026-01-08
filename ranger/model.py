@@ -110,6 +110,7 @@ class RangerModel(Model):
             torch.nn.Flatten(-2, -1),
             layers.Dense(self.g * 2 * self.args.obs_frames,
                          2, activation=torch.nn.Tanh),
+            Gate()
         )
 
         self.fusion = torch.nn.Sequential(
