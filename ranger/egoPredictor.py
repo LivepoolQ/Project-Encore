@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-09 15:34:52
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-01-04 17:10:18
+@LastEditTime: 2026-01-09 16:20:51
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -30,18 +30,13 @@ class EgoPredictor(torch.nn.Module):
                  traj_dim: int,
                  feature_dim: int,
                  backbone: str,
-                 recurrent: bool = True,
                  capacity: int = -1,
                  *args, **kwargs):
 
         super().__init__()
 
-        self.rec = recurrent
-
-        r = 1 if recurrent else 2
-
-        self.t_h = obs_steps * r
-        self.t_f = pred_steps * r
+        self.t_h = obs_steps
+        self.t_f = pred_steps
 
         self.d_traj = traj_dim
         self.d = feature_dim
@@ -238,9 +233,7 @@ class EgoPredictor(torch.nn.Module):
     @overload
     def implement(self, ego_s1: torch.Tensor,
                   nei_s1: torch.Tensor,
-                  ego_s2: None | torch.Tensor = None,
-                  nei_s2: None | torch.Tensor = None,
-                  training=None,) -> torch.Tensor:
+                  training=None) -> torch.Tensor:
         """
         Foward ego predictor, return the prediction *as is*.
         """
@@ -249,10 +242,8 @@ class EgoPredictor(torch.nn.Module):
     @overload
     def implement(self, ego_s1: torch.Tensor,
                   nei_s1: torch.Tensor,
-                  ego_s2: None | torch.Tensor = None,
-                  nei_s2: None | torch.Tensor = None,
                   training=None,
-                  return_mean: bool = True,) -> tuple[torch.Tensor, torch.Tensor]:
+                  return_mean: bool = True) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Foward ego predictor, return the *mean* prediction for each neighbor.
         """
@@ -260,10 +251,8 @@ class EgoPredictor(torch.nn.Module):
 
     def implement(self, ego_s1: torch.Tensor,
                   nei_s1: torch.Tensor,
-                  ego_s2: None | torch.Tensor = None,
-                  nei_s2: None | torch.Tensor = None,
                   training=None,
-                  return_mean: bool = False,):
+                  return_mean: bool = False):
 
         if self.backbone == 'linear':
             y = self.encoder(nei_s1)
@@ -277,60 +266,31 @@ class EgoPredictor(torch.nn.Module):
             training=training,
         )
 
-        if not self.rec:
-            if return_mean:
-                return torch.mean(x_nei_pred_s2, dim=-3), x_nei_pred_s2
-            else:
-                return x_nei_pred_s2
-
-        if None in [ego_s2, nei_s2]:
-            ego_s2 = ego_s1
-            nei_s2 = torch.mean(x_nei_pred_s2, dim=-3)
-
-        # Recurrent prediction: 3 -> 4
-        x_nei_pred_s3 = self(
-            ego_traj=ego_s2,
-            nei_trajs=nei_s2,
-            training=training,
-        )
-
-        # (batch, nei, insights, pred, dim)
-        y = torch.concat([x_nei_pred_s2,
-                          x_nei_pred_s3],
-                         dim=-2)
-
-        # (batch, nei, pred, dim)
         if return_mean:
-            return torch.mean(y, dim=-3), y
+            return torch.mean(x_nei_pred_s2, dim=-3), x_nei_pred_s2
         else:
-            return y
+            return x_nei_pred_s2
 
 
 class LinearPrediction(torch.nn.Module):
 
-    def __init__(self, 
+    def __init__(self,
                  obs_steps: int,
                  pred_steps: int,
                  insights: int,
-                 recurrent: bool = True,
                  *args, **kwargs):
 
         super().__init__()
 
-        self.rec = recurrent
-
         self.insights = insights
-
-        r = 1 if recurrent else 2
-
-        self.t_h = obs_steps * r
-        self.t_f = pred_steps * r
+        self.t_h = obs_steps
+        self.t_f = pred_steps
 
         self.encoder = layers.LinearLayerND(
-                obs_frames=self.t_h,
-                pred_frames=self.t_f,
-                return_full_trajectory=False)
-        
+            obs_frames=self.t_h,
+            pred_frames=self.t_f,
+            return_full_trajectory=False)
+
     def forward(self, nei_trajs: torch.Tensor):
 
         y_nei = self.encoder(nei_trajs)
@@ -341,16 +301,36 @@ class LinearPrediction(torch.nn.Module):
         )
 
         return y_nei, y_nei_not_mean
-    
-    def implement(self, 
+
+    @overload
+    def implement(self, ego_s1: torch.Tensor,
                   nei_s1: torch.Tensor,
+                  training=None) -> torch.Tensor:
+        """
+        Foward ego predictor, return the prediction *as is*.
+        """
+        ...
+
+    @overload
+    def implement(self, ego_s1: torch.Tensor,
+                  nei_s1: torch.Tensor,
+                  training=None,
+                  return_mean: bool = True) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Foward ego predictor, return the *mean* prediction for each neighbor.
+        """
+        ...
+
+    def implement(self,
+                  ego_s1: torch.Tensor,
+                  nei_s1: torch.Tensor,
+                  training=None,
                   return_mean: bool = False,
                   *args, **kwargs):
-        
+
         y, y_not_mean = self(nei_s1)
-        
+
         if return_mean:
             return y, y_not_mean
         else:
             return y_not_mean
-        

@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2025-12-11 17:21:42
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-01-04 16:46:09
+@LastEditTime: 2026-01-13 20:05:09
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2025 Ziqian Zou, All Rights Reserved.
@@ -96,14 +96,30 @@ class RangerArgs(EmptyArgs):
                          desc_in_model_summary=('Ego predictor', 'type'))
 
     @property
+    def ego_t_h(self) -> int:
+        """
+        Observation time steps calculated in ego predictor.
+        """
+        return self._arg('ego_t_h', -1, argtype=STATIC,
+                         desc_in_model_summary=('Ego predictor', 'ego_t_h'))
+
+    @property
+    def ego_t_f(self) -> int:
+        """
+        Prediction time steps calculated in ego predictor.
+        """
+        return self._arg('ego_t_f', -1, argtype=STATIC,
+                         desc_in_model_summary=('Ego predictor', 'ego_t_f'))
+
+    @property
     def group_type(self) -> int:
         """
         Choose which group method to use, including `[0, 1, 2]`:
         - `0`: Vanilla ;
-        - `1`: TODO
-        - `2`: TODO
+        - `1`: TODO Model;
+        - `2`: TODO.
         """
-        return self._arg('group_type', 0, argtype=STATIC, desc_in_model_summary='group type')
+        return self._arg('group_type', 1, argtype=STATIC, desc_in_model_summary='group type')
 
     @property
     def ego_capacity(self) -> int:

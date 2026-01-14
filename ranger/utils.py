@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-09 15:50:31
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-01-07 19:56:45
+@LastEditTime: 2026-01-09 16:53:06
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -75,7 +75,7 @@ def repeat(input: torch.Tensor, repeats: int, dim: int):
 class Gate(torch.nn.Module):
 
     def __init__(self, 
-                 gate_value: float = -0.5,
+                 gate_value: float = -0.9,
                  *args, **kwargs) -> None:
         super().__init__()
         self.gate = gate_value
