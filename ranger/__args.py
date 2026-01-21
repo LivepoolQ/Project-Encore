@@ -85,6 +85,16 @@ class RangerArgs(EmptyArgs):
                          desc_in_model_summary=('Ego predictor', 'insights num'))
 
     @property
+    def encode_agent_types(self) -> int:
+        """
+        Choose whether to encode the type name of each agent.
+        It is mainly used in multi-type-agent prediction scenes, providing
+        a unique type-coding for each type of agents when encoding their
+        trajectories.
+        """
+        return self._arg('encode_agent_types', 0, argtype=STATIC)
+
+    @property
     def ego_predictor_type(self) -> str:
         """
         Choose which kind of backbones ego predictor will use.

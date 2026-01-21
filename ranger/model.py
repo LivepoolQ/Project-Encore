@@ -4,13 +4,14 @@ from qpid.constant import INPUT_TYPES
 from qpid.model import Model, layers, transformer
 from qpid.training import Structure
 from qpid.training.loss import l2
+from qpid.utils import MAX_TYPE_NAME_LEN
 
 from .__args import RangerArgs
 from ._groupLayer import INF, MU, GroupLayer, LongTermKernel
 from ._trajEncoding import TrajEncoding
 from .egoLoss import EgoLoss
 from .egoPredictor import EgoPredictor, LinearPrediction
-from .utils import repeat, Gate
+from .utils import Gate, repeat
 
 
 class RangerModel(Model):
@@ -28,7 +29,15 @@ class RangerModel(Model):
         self.t_f = self.r.ego_t_f
 
         # Set model inputs
-        self.set_inputs(INPUT_TYPES.OBSERVED_TRAJ, INPUT_TYPES.NEIGHBOR_TRAJ)
+        # Types of agents are only used in complex scenes
+        # For other datasets, keep it disabled (through the arg)
+        if not self.r.encode_agent_types:
+            self.set_inputs(INPUT_TYPES.OBSERVED_TRAJ,
+                            INPUT_TYPES.NEIGHBOR_TRAJ)
+        else:
+            self.set_inputs(INPUT_TYPES.OBSERVED_TRAJ,
+                            INPUT_TYPES.NEIGHBOR_TRAJ,
+                            INPUT_TYPES.AGENT_TYPES)
 
         # Grouplayer: perceive out-of-group agents
         self.gp = GroupLayer(output_units=self.d,
@@ -117,6 +126,11 @@ class RangerModel(Model):
             Gate()
         )
 
+        if self.r.encode_agent_types:
+            self.type_encoder = layers.Dense(MAX_TYPE_NAME_LEN,
+                                             self.g,
+                                             torch.nn.Tanh)
+
     @property
     def d(self) -> int:
         """
@@ -130,6 +144,12 @@ class RangerModel(Model):
         # --------------------
         obs_original = self.get_input(inputs, INPUT_TYPES.OBSERVED_TRAJ)
         nei_original = self.get_input(inputs, INPUT_TYPES.NEIGHBOR_TRAJ)
+
+        # Get types of all ego agents (if needed)
+        if self.r.encode_agent_types:
+            ego_types = self.get_input(inputs, INPUT_TYPES.AGENT_TYPES)
+        else:
+            ego_types = None
 
         # mask neighbors
         obs = obs_original
@@ -194,9 +214,16 @@ class RangerModel(Model):
 
             elif t == 2:
                 raise NotImplementedError
-
-        # Encode ego's imagined obs and tolerance
+        
+        # Encode ego's imagined obs 
         f_obs = self.te(egos)
+
+        # Encode types (if needed)
+        if self.r.encode_agent_types and (ego_types is not None):
+            f_type = self.type_encoder(ego_types)[..., None, :]
+            f_obs = f_obs + f_type
+
+        # predict and tolerance
         tolerance = self.tolerance_pred(f_obs)
 
         # grouping imagined trajectories
