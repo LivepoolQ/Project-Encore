@@ -2,6 +2,7 @@ import sys
 
 import qpid
 import ranger
+import socialality
 
 """
 This repo is compatible with our previous models.
