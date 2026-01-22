@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2025-12-11 17:21:42
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-01-22 14:23:10
+@LastEditTime: 2026-01-22 19:55:46
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2025 Ziqian Zou, All Rights Reserved.
@@ -138,9 +138,9 @@ class SocialalityArgs(EmptyArgs):
     @property
     def use_mixed_trajectory(self) -> int:
         """
-        Choose whether to use TODO
+        Choose whether to use mixed time window trajectory.
         """
-        return self._arg('use_mixed_trajectory', 1, argtype=STATIC, desc_in_model_summary='use mixed trajectory')
+        return self._arg('use_mixed_trajectory', 1, argtype=STATIC, desc_in_model_summary='use mixed trajectory', short_name='mix')
     
     # --------------------------
     # MARK: - Visualization Args

@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2026-01-22 09:48:21
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-01-22 13:01:27
+@LastEditTime: 2026-01-22 14:35:04
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2026 Ziqian Zou, All Rights Reserved.
@@ -112,26 +112,26 @@ class SocialalityModel(Model):
         x_ego = self.get_input(inputs, INPUT_TYPES.OBSERVED_TRAJ)
         x_nei = self.get_input(inputs, INPUT_TYPES.NEIGHBOR_TRAJ)
 
-        # --------------------
+        # -----------------------
         # MARK: - Grouping Kernel
-        # --------------------
+        # -----------------------
         group_mask, trajs_group, f_ego, socialality, nei_pred_train, y_nei = self.grouping(
             x_ego, 
             x_nei, 
             training)
 
-        # --------------------
+        # ----------------------------
         # MARK: - Perception Mechanism
-        # --------------------
+        # ----------------------------
         f_group, f_out_group = self.perception(
             x_ego, 
             x_nei, 
             group_mask, 
             trajs_group)
 
-        # --------------------
+        # -----------------------
         # MARK: - Fusion Strategy
-        # --------------------
+        # -----------------------
         f_ego = f_ego * (1.0 + socialality[..., None, -1:])
         f_group = f_group * (1.0 / (1.0 + socialality[..., None, :1]))
         f_out_group = (f_out_group *
@@ -140,9 +140,9 @@ class SocialalityModel(Model):
         f = torch.concat([f_ego, f_group, f_out_group], dim=-1)
         f = self.concat_fc(f)
 
-        # --------------------
+        # ------------------------------------
         # MARK: - Backbone (Transformer & MSN)
-        # --------------------
+        # ------------------------------------
         # Sampling random noise vectors
         all_predictions = []
         repeats = self.args.K_train if training else self.args.K
@@ -198,6 +198,9 @@ class SocialalityModel(Model):
                 nei_pred_train,
             ]
 
+        # ---------------------
+        # MARK: - Visualization
+        # ---------------------
         # Visualize ego predictor's outputs
         # This only works in the playground mode
         elif v := self.r.vis_ego_predictor:

@@ -120,7 +120,10 @@ class GroupingKernel(torch.nn.Module):
                 ego_traj[..., -self.t_h:, :],
                 y_ego
             ], dim=-2)
-
+        
+        else:
+            nei_pred_train = nei_trajs[..., -self.t_f:, :]
+            y_nei = None
         # ------------------------
         # MARK: - Embed and Encode
         # ------------------------
@@ -169,4 +172,20 @@ class SocialalityKernel(torch.nn.Module):
         group_num = torch.sum(group_mask, dim=-1)
 
         return group_mask, trajs_group, group_num
+    
+class LongTermKernel(torch.nn.Module):
+    def __init__(self,
+                 threshold: float, 
+                 *args, 
+                 **kwargs):
+    
+        super().__init__()
+
+        self.threshold = threshold
+    
+    def forward(self, x_ego: torch.Tensor, x_nei: torch.Tensor):
+        """
+        x_ego and x_nei consist of selected only time steps.
+        """
+        return
     
