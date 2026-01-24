@@ -15,6 +15,11 @@ class GroupingKernel(torch.nn.Module):
                  insights: int,
                  backbone: str,
                  use_mixed: int,
+                 fix_dis_anchor: int,
+                 fix_speed_anchor: int,
+                 set_anchor: int,
+                 set_dis_anchor = None,
+                 set_speed_anchor = None,
                  ego_capacity: int = -1,
                  ego_t_h: int = -1,
                  ego_t_f: int = -1,
@@ -31,6 +36,11 @@ class GroupingKernel(torch.nn.Module):
         self.t_h = ego_t_h
         self.t_f = ego_t_f
         self.use_mixed = use_mixed
+        self.fix_dis = fix_dis_anchor
+        self.fix_speed = fix_speed_anchor
+        self.set_anchor = set_anchor
+        self.set_dis_anchor = set_dis_anchor
+        self.set_speed_anchor = set_speed_anchor
 
         # # Encode ego's obs
         self.ego_te = torch.nn.Sequential(
@@ -133,6 +143,38 @@ class GroupingKernel(torch.nn.Module):
         # predict socialality
         socialality = self.socialality_pred(f_ego) # (bs, 2)
 
+        # ------------------------------------
+        # MARK: - Socialality Anchor Ablations
+        # ------------------------------------
+        # Only used in ablations
+        need_modify = (self.fix_dis or self.fix_speed or self.set_anchor)
+        if need_modify:
+            socialality = socialality.clone()
+
+            # -------------------------
+            # Set anchor to constant
+            # -------------------------
+            if self.set_anchor:
+                # set distance anchor value
+                if self.set_dis_anchor != -1:
+                    socialality[..., 0] = self.set_dis_anchor
+
+                # set speed anchor value
+                if self.set_speed_anchor != -1:
+                    socialality[..., 1] = self.set_speed_anchor
+
+            # -------------------------
+            # Fix anchor (stop-grad)
+            # -------------------------
+            # only detach if this anchor is NOT already set to constant
+            if self.fix_dis and not (self.set_anchor and self.set_dis_anchor != -1):
+                socialality[..., 0] = socialality[..., 0].detach()
+
+            if self.fix_speed and not (self.set_anchor and self.set_speed_anchor != -1):
+                socialality[..., 1] = socialality[..., 1].detach()
+
+
+        print(socialality)
         # grouping agents using predicted socialality factor
         group_mask, trajs_group, _ = self.grouping(ego_traj, 
                                                    nei_trajs, 

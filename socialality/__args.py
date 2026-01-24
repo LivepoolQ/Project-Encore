@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2025-12-11 17:21:42
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-01-22 19:55:46
+@LastEditTime: 2026-01-24 18:11:38
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2025 Ziqian Zou, All Rights Reserved.
@@ -141,6 +141,41 @@ class SocialalityArgs(EmptyArgs):
         Choose whether to use mixed time window trajectory.
         """
         return self._arg('use_mixed_trajectory', 1, argtype=STATIC, desc_in_model_summary='use mixed trajectory', short_name='mix')
+    
+    @property
+    def fix_distance_anchor(self) -> int:
+        """
+        Choose whether to fix distance anchor.
+        """
+        return self._arg('fix_distance_anchor', 0, argtype=STATIC, desc_in_model_summary='fix distance anchor', short_name='fix_dis')
+    
+    @property
+    def fix_speed_anchor(self) -> int:
+        """
+        Choose whether to speed distance anchor.
+        """
+        return self._arg('fix_speed_anchor', 0, argtype=STATIC, desc_in_model_summary='fix speed anchor', short_name='fix_speed')
+    
+    @property
+    def set_anchor_value(self) -> int:
+        """
+        Choose whether to set anchor value globally.
+        """
+        return self._arg('set_anchor_value', 0, argtype=STATIC, desc_in_model_summary='set anchor value')
+    
+    @property
+    def set_distance_anchor(self) -> float:
+        """
+        Set distance anchor value globally.
+        """
+        return self._arg('set_distance_anchor', -1, argtype=STATIC, short_name='set_dis')
+    
+    @property
+    def set_speed_anchor(self) -> float:
+        """
+        Set distance anchor value globally.
+        """
+        return self._arg('set_speed_anchor', -1, argtype=STATIC, short_name='set_speed')
     
     # --------------------------
     # MARK: - Visualization Args

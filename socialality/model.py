@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2026-01-22 09:48:21
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-01-22 14:35:04
+@LastEditTime: 2026-01-24 16:52:31
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2026 Ziqian Zou, All Rights Reserved.
@@ -48,6 +48,11 @@ class SocialalityModel(Model):
             ego_t_f=self.r.ego_t_f,
             ego_t_h=self.r.ego_t_h,
             use_mixed=self.r.use_mixed_trajectory,
+            fix_dis_anchor = self.r.fix_distance_anchor,
+            fix_speed_anchor = self.r.fix_speed_anchor,
+            set_anchor = self.r.set_anchor_value,
+            set_dis_anchor = self.r.set_distance_anchor,
+            set_speed_anchor = self.r.set_speed_anchor,
         )
 
         # Perception mechanism
