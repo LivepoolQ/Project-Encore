@@ -173,8 +173,6 @@ class GroupingKernel(torch.nn.Module):
             if self.fix_speed and not (self.set_anchor and self.set_speed_anchor != -1):
                 socialality[..., 1] = socialality[..., 1].detach()
 
-
-        print(socialality)
         # grouping agents using predicted socialality factor
         group_mask, trajs_group, _ = self.grouping(ego_traj, 
                                                    nei_trajs, 
