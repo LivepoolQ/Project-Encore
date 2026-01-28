@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2026-01-22 09:48:21
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-01-24 16:52:31
+@LastEditTime: 2026-01-28 15:04:53
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2026 Ziqian Zou, All Rights Reserved.
@@ -53,6 +53,7 @@ class SocialalityModel(Model):
             set_anchor = self.r.set_anchor_value,
             set_dis_anchor = self.r.set_distance_anchor,
             set_speed_anchor = self.r.set_speed_anchor,
+            previews_only = self.r.previews_only,
         )
 
         # Perception mechanism

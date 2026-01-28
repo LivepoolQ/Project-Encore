@@ -23,6 +23,7 @@ class GroupingKernel(torch.nn.Module):
                  ego_capacity: int = -1,
                  ego_t_h: int = -1,
                  ego_t_f: int = -1,
+                 previews_only: int =0,
                  *args, **kwargs):
         super().__init__()
 
@@ -41,6 +42,7 @@ class GroupingKernel(torch.nn.Module):
         self.set_anchor = set_anchor
         self.set_dis_anchor = set_dis_anchor
         self.set_speed_anchor = set_speed_anchor
+        self.previews_only = previews_only
 
         # # Encode ego's obs
         self.ego_te = torch.nn.Sequential(
@@ -130,8 +132,30 @@ class GroupingKernel(torch.nn.Module):
                 ego_traj[..., -self.t_h:, :],
                 y_ego
             ], dim=-2)
+
+            if self.previews_only:
+                y_ego_preview_packed, _ = self.ego_pred.implement(
+                            ego_s1=y_ego,
+                            nei_s1=y_ego_packed,
+                            return_mean=True,
+                        )
+                y_ego_preview = y_ego_preview_packed[..., 0, :, :]
+                y_nei_preview = y_ego_preview_packed[..., 1:, :, :]
+
+                # Further extend time axis
+                nei_trajs = torch.concat([
+                    y_nei,
+                    y_nei_preview], dim=-2
+                )
+                ego_traj = torch.concat([
+                    y_ego,
+                    y_ego_preview
+                ], dim=-2)
         
         else:
+            if self.previews_only:
+                raise ValueError('This args can only be used when --use_mixed_trajectory 1.')
+            
             nei_pred_train = nei_trajs[..., -self.t_f:, :]
             y_nei = None
         # ------------------------
@@ -172,6 +196,11 @@ class GroupingKernel(torch.nn.Module):
 
             if self.fix_speed and not (self.set_anchor and self.set_speed_anchor != -1):
                 socialality[..., 1] = socialality[..., 1].detach()
+
+        # --------------------------------
+        # Socialality achors visualization
+        # --------------------------------
+        
 
         # grouping agents using predicted socialality factor
         group_mask, trajs_group, _ = self.grouping(ego_traj, 

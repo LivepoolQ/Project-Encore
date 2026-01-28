@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2025-12-11 17:21:42
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-01-24 18:11:38
+@LastEditTime: 2026-01-28 15:10:16
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2025 Ziqian Zou, All Rights Reserved.
@@ -176,6 +176,14 @@ class SocialalityArgs(EmptyArgs):
         Set distance anchor value globally.
         """
         return self._arg('set_speed_anchor', -1, argtype=STATIC, short_name='set_speed')
+    
+    @property
+    def previews_only(self) -> int:
+        """
+        Choose whether to only use previews when grouping.
+        NOTE This args can only be used when `--use_mixed_trajectory 1`.
+        """
+        return self._arg('previews_only', 0, argtype=STATIC, desc_in_model_summary='only previews')
     
     # --------------------------
     # MARK: - Visualization Args
