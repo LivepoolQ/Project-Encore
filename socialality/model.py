@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2026-01-22 09:48:21
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-01-28 15:04:53
+@LastEditTime: 2026-01-29 17:02:28
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2026 Ziqian Zou, All Rights Reserved.
@@ -54,6 +54,7 @@ class SocialalityModel(Model):
             set_dis_anchor = self.r.set_distance_anchor,
             set_speed_anchor = self.r.set_speed_anchor,
             previews_only = self.r.previews_only,
+            vis_anchors = self.r.vis_anchors,
         )
 
         # Perception mechanism
@@ -220,6 +221,10 @@ class SocialalityModel(Model):
                              level='error', raiseError=ValueError)
 
             returns[0] = e
+        
+        if v := self.r.vis_group_members:
+            
+            returns[0] = torch.flatten(trajs_group[..., self.r.ego_t_h-1:self.r.ego_t_h, :], -3, -2)
         
         return returns
         

@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2025-12-11 17:21:42
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-01-28 15:10:16
+@LastEditTime: 2026-01-29 18:28:02
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2025 Ziqian Zou, All Rights Reserved.
@@ -203,11 +203,29 @@ class SocialalityArgs(EmptyArgs):
         will be killed immediately.
         """
         return self._arg('vis_ego_predictor', 0, argtype=TEMPORARY)
+    
+    @property
+    def vis_group_members(self) -> int:
+        """
+        Choose whether to visualize group members.
+
+        NOTE that this arg only works in the *Playground* mode, or the program
+        will be killed immediately.
+        """
+        return self._arg('vis_group_members', 0, argtype=TEMPORARY)
+    
+    @property
+    def vis_anchors(self) -> int:
+        """
+        Choose whether to visualize anchors.
+        """
+        return self._arg('vis_anchors', 0, argtype=TEMPORARY)
 
     def _init_all_args(self):
         super()._init_all_args()
 
         if ((self.vis_ego_predictor)
+                and (self.vis_group_members)
                 and (self._terminal_args is not None)
                 and ('playground' not in ''.join(self._terminal_args))):
             self.log('Arg `vis_ego_predictor` can be only used in the ' +

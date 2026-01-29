@@ -2,11 +2,12 @@
 @Author: Conghao Wong
 @Date: 2025-12-09 15:50:31
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-01-09 16:53:06
+@LastEditTime: 2026-01-28 19:44:18
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
 
+import matplotlib.pyplot as plt
 import torch
 
 from qpid.model import layers
@@ -82,3 +83,27 @@ class Gate(torch.nn.Module):
 
     def forward(self, x, *args, **kwargs):
         return torch.maximum(x, torch.ones_like(x) * self.gate)
+    
+    
+def vis_socialality(anchors:torch.Tensor):
+
+    plt.figure(figsize=(4, 4))
+
+    plt.scatter(
+        anchors[:, 0],
+        anchors[:, 1],
+        s=20,
+        alpha=0.3
+    )
+    plt.xlabel(r'$\tau^{a}$')
+    plt.ylabel(r'$\tau^{b}$')
+    plt.title('Socialality Anchors')
+    plt.axis('equal')
+
+    import seaborn as sns
+    sns.kdeplot(x=anchors.numpy().T[0], y=anchors.numpy().T[1], fill=True, alpha=0.5)
+
+    plt.show()
+
+    return anchors
+    

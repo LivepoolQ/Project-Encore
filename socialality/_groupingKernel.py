@@ -23,7 +23,8 @@ class GroupingKernel(torch.nn.Module):
                  ego_capacity: int = -1,
                  ego_t_h: int = -1,
                  ego_t_f: int = -1,
-                 previews_only: int =0,
+                 previews_only: int = 0,
+                 vis_anchors: int = 0,
                  *args, **kwargs):
         super().__init__()
 
@@ -43,6 +44,7 @@ class GroupingKernel(torch.nn.Module):
         self.set_dis_anchor = set_dis_anchor
         self.set_speed_anchor = set_speed_anchor
         self.previews_only = previews_only
+        self.vis_anchors = vis_anchors
 
         # # Encode ego's obs
         self.ego_te = torch.nn.Sequential(
@@ -192,15 +194,17 @@ class GroupingKernel(torch.nn.Module):
             # -------------------------
             # only detach if this anchor is NOT already set to constant
             if self.fix_dis and not (self.set_anchor and self.set_dis_anchor != -1):
-                socialality[..., 0] = socialality[..., 0].detach()
+                socialality[..., 0] = torch.detach(socialality[..., 0])
 
             if self.fix_speed and not (self.set_anchor and self.set_speed_anchor != -1):
-                socialality[..., 1] = socialality[..., 1].detach()
+                socialality[..., 1] = torch.detach(socialality[..., 1])
 
         # --------------------------------
         # Socialality achors visualization
         # --------------------------------
-        
+        if self.vis_anchors:
+            from .utils import vis_socialality
+            vis_socialality(socialality)
 
         # grouping agents using predicted socialality factor
         group_mask, trajs_group, _ = self.grouping(ego_traj, 
