@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2026-01-22 09:48:21
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-01-29 17:02:28
+@LastEditTime: 2026-02-06 11:23:39
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2026 Ziqian Zou, All Rights Reserved.
@@ -19,6 +19,8 @@ from .__args import SocialalityArgs
 from ._groupingKernel import GroupingKernel
 from ._perceptionMechanism import PerceptionMechanism
 from .egoLoss import EgoLoss
+import qpid.mods.vis.helpers
+from .group_vis.groupVis import modify_qpid_utils
 
 
 class SocialalityModel(Model):
@@ -213,7 +215,7 @@ class SocialalityModel(Model):
         elif v := self.r.vis_ego_predictor:
             match v:
                 case 1:
-                    e = torch.flatten(y_nei, -4, -3)
+                    e = y_nei
                 case 2:
                     e = y_nei
                 case _:
@@ -222,9 +224,19 @@ class SocialalityModel(Model):
 
             returns[0] = e
         
-        if v := self.r.vis_group_members:
-            
-            returns[0] = torch.flatten(trajs_group[..., self.r.ego_t_h-1:self.r.ego_t_h, :], -3, -2)
+        if self.r.vis_group_members:
+            if self.r.use_mixed_trajectory != 1:
+                returns[0] = torch.flatten(trajs_group[..., 
+                                                   -1:, :],
+                                                     -3, -2)
+            elif self.r.previews_only:
+                returns[0] = torch.flatten((group_mask[..., None, None] * x_nei)[..., 
+                                                   -1:, :],
+                                                     -3, -2)
+            elif self.r.use_mixed_trajectory == 1:
+                returns[0] = torch.flatten(trajs_group[..., 
+                                                   self.r.ego_t_h-1:self.r.ego_t_h, :],
+                                                     -3, -2)
         
         return returns
         
@@ -251,3 +263,6 @@ class Socialality(Structure):
                            EgoLoss: self.r.ego_loss_ratio})
         else:
             self.loss.set({l2: 1.0})
+        
+        modify_qpid_utils(mod_pred_img=self.r.vis_group_members, mod_vis_func=self.r.vis_ego_predictor + self.r.vis_group_members)
+        
