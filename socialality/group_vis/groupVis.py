@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2026-02-05 16:10:21
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-02-05 16:32:28
+@LastEditTime: 2026-03-04 11:27:46
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2026 Ziqian Zou, All Rights Reserved.
@@ -12,6 +12,7 @@ import numpy as np
 import qpid.mods.vis.helpers
 from qpid.mods.vis.helpers.__normal2D import ADD
 from qpid.utils import get_relative_path
+from ..__args import SocialalityArgs
 
 def vis(self, source: np.ndarray,
             obs: np.ndarray | None = None,
@@ -87,8 +88,12 @@ def vis(self, source: np.ndarray,
         f = ADD(source, f, [f.shape[1]//2, f.shape[0]//2])
         return f
 
-def modify_qpid_utils(mod_vis_func: bool|int, mod_pred_img: bool|int):
+def modify_qpid_utils(mod_vis_func: bool|int, mod_pred_img: bool|int, mod_vis_type: int):
     if mod_vis_func:
         qpid.mods.vis.helpers.Normal2DCanvas.vis = vis
     if mod_pred_img:
-        qpid.mods.vis.helpers.__normal2D.PRED_IMAGE = get_relative_path(__file__, 'group_member.png')
+        match mod_vis_type:
+            case 1:
+                qpid.mods.vis.helpers.__normal2D.PRED_IMAGE = get_relative_path(__file__, 'group_member.png')
+            case 2:
+                qpid.mods.vis.helpers.__normal2D.PRED_IMAGE = get_relative_path(__file__, 'grouping_window.png')

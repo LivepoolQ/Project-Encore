@@ -211,7 +211,7 @@ class GroupingKernel(torch.nn.Module):
                                                    nei_trajs, 
                                                    socialality)
 
-        return group_mask, trajs_group, f_ego, socialality, nei_pred_train, y_nei
+        return group_mask, trajs_group, f_ego, socialality, nei_pred_train, y_nei, nei_trajs
 
 
 class SocialalityKernel(torch.nn.Module):

@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2026-01-22 09:48:21
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-02-06 11:23:39
+@LastEditTime: 2026-03-04 11:26:18
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2026 Ziqian Zou, All Rights Reserved.
@@ -124,7 +124,7 @@ class SocialalityModel(Model):
         # -----------------------
         # MARK: - Grouping Kernel
         # -----------------------
-        group_mask, trajs_group, f_ego, socialality, nei_pred_train, y_nei = self.grouping(
+        group_mask, trajs_group, f_ego, socialality, nei_pred_train, y_nei, grouping_justifications = self.grouping(
             x_ego, 
             x_nei, 
             training)
@@ -225,19 +225,21 @@ class SocialalityModel(Model):
             returns[0] = e
         
         if self.r.vis_group_members:
-            if self.r.use_mixed_trajectory != 1:
-                returns[0] = torch.flatten(trajs_group[..., 
-                                                   -1:, :],
-                                                     -3, -2)
-            elif self.r.previews_only:
-                returns[0] = torch.flatten((group_mask[..., None, None] * x_nei)[..., 
-                                                   -1:, :],
-                                                     -3, -2)
-            elif self.r.use_mixed_trajectory == 1:
-                returns[0] = torch.flatten(trajs_group[..., 
+            # group member visualization
+            returns[0] = torch.flatten(trajs_group[..., 
                                                    self.r.ego_t_h-1:self.r.ego_t_h, :],
                                                      -3, -2)
-        
+            
+            if self.r.vis_grouping_window:
+            # grouping stage visualization
+                returns[0] = torch.flatten(grouping_justifications[:, torch.where(group_mask[0])[0]],
+                                                     -3, -2)
+        else:
+            if self.r.vis_grouping_window:
+                self.log('Arg `vis_grouping_window` can be only used ' + 
+                         'when arg `vis_group_members` is activated!',
+                     level='error', raiseError=ValueError)
+    
         return returns
         
 
@@ -264,5 +266,7 @@ class Socialality(Structure):
         else:
             self.loss.set({l2: 1.0})
         
-        modify_qpid_utils(mod_pred_img=self.r.vis_group_members, mod_vis_func=self.r.vis_ego_predictor + self.r.vis_group_members)
+        modify_qpid_utils(mod_pred_img=self.r.vis_group_members, 
+                          mod_vis_func=self.r.vis_ego_predictor + self.r.vis_group_members,
+                          mod_vis_type=self.r.vis_group_members + self.r.vis_grouping_window)
         

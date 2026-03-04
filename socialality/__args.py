@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2025-12-11 17:21:42
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-01-29 18:28:02
+@LastEditTime: 2026-03-04 10:18:41
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2025 Ziqian Zou, All Rights Reserved.
@@ -213,6 +213,18 @@ class SocialalityArgs(EmptyArgs):
         will be killed immediately.
         """
         return self._arg('vis_group_members', 0, argtype=TEMPORARY)
+    
+    @property
+    def vis_grouping_window(self) -> int:
+        """
+        Choose whether to visualize grouping window.
+
+        NOTE that this arg only works in the *Playground* mode, or the program
+        will be killed immediately. 
+        NOTE that this arg only works when the arg `vis_group_members` is
+        activated. 
+        """
+        return self._arg('vis_grouping_window', 0, argtype=TEMPORARY)
     
     @property
     def vis_anchors(self) -> int:
