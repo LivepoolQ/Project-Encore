@@ -7,7 +7,7 @@ from qpid.model import layers
 
 
 class GroupingKernel(torch.nn.Module):
-    def __init__(self, 
+    def __init__(self,
                  traj_dim: int,
                  feature_dim: int,
                  obs_steps: int,
@@ -18,13 +18,15 @@ class GroupingKernel(torch.nn.Module):
                  fix_dis_anchor: int,
                  fix_speed_anchor: int,
                  set_anchor: int,
-                 set_dis_anchor = None,
-                 set_speed_anchor = None,
+                 set_dis_anchor=None,
+                 set_speed_anchor=None,
                  ego_capacity: int = -1,
                  ego_t_h: int = -1,
                  ego_t_f: int = -1,
                  previews_only: int = 0,
                  vis_anchors: int = 0,
+                 disable_dis_anchor: int = 0,
+                 disable_speed_anchor: int = 0,
                  *args, **kwargs):
         super().__init__()
 
@@ -45,28 +47,30 @@ class GroupingKernel(torch.nn.Module):
         self.set_speed_anchor = set_speed_anchor
         self.previews_only = previews_only
         self.vis_anchors = vis_anchors
+        self.disable_dis_anchor = disable_dis_anchor
+        self.disable_speed_anchor = disable_speed_anchor
 
         # # Encode ego's obs
         self.ego_te = torch.nn.Sequential(
-            layers.Dense(input_units=self.traj_dim, 
-                         output_units=self.feature_dim, 
+            layers.Dense(input_units=self.traj_dim,
+                         output_units=self.feature_dim,
                          activation=torch.nn.ReLU),
-            layers.Dense(input_units=self.feature_dim, 
-                         output_units=self.feature_dim, 
+            layers.Dense(input_units=self.feature_dim,
+                         output_units=self.feature_dim,
                          activation=torch.nn.Tanh),
         )
 
         # Socialality prediction network
         self.socialality_pred = torch.nn.Sequential(
-            layers.Dense(self.feature_dim, 
-                         self.feature_dim * 2, 
+            layers.Dense(self.feature_dim,
+                         self.feature_dim * 2,
                          activation=torch.nn.ReLU),
-            layers.Dense(self.feature_dim * 2, 
-                         self.feature_dim * 2, 
+            layers.Dense(self.feature_dim * 2,
+                         self.feature_dim * 2,
                          activation=torch.nn.ReLU),
             torch.nn.Flatten(-2, -1),
             layers.Dense(self.feature_dim * 2 * self.obs_steps,
-                         2, 
+                         2,
                          activation=torch.nn.Tanh),
             Gate()
         )
@@ -93,7 +97,6 @@ class GroupingKernel(torch.nn.Module):
             capacity=self.ego_capacity,
         )
 
-
     def forward(self, ego_traj: torch.Tensor, nei_trajs: torch.Tensor, training=None):
 
         if self.use_mixed:
@@ -101,27 +104,29 @@ class GroupingKernel(torch.nn.Module):
             # MARK: - Ego predictor
             # ---------------------
             # pack ego and nei for faster inference
-            nei_packed = torch.concat([ego_traj[..., None, :, :], nei_trajs], dim=-3)
+            nei_packed = torch.concat(
+                [ego_traj[..., None, :, :], nei_trajs], dim=-3)
 
             # |<---- obs ---->|<-------- pred -------->|
             #         |<-t_h->|<-t_f->| <- inference
             # |<-t_h->|<-t_f->|         <- train
             if training:
                 y_ego_train = self.ego_pred.implement(
-                        ego_s1=ego_traj[..., -(self.t_h + self.t_f):-self.t_f, :],
-                        nei_s1=nei_packed[..., -(self.t_h + self.t_f):-self.t_f, :],
-                        training=training
-                    )
+                    ego_s1=ego_traj[..., -(self.t_h + self.t_f):-self.t_f, :],
+                    nei_s1=nei_packed[..., -
+                                      (self.t_h + self.t_f):-self.t_f, :],
+                    training=training
+                )
                 nei_pred_train = y_ego_train[..., 1:, :, :, :]
 
             else:
                 nei_pred_train = None
 
             y_ego_packed, _ = self.ego_pred.implement(
-                        ego_s1=ego_traj[..., -self.t_h:, :],
-                        nei_s1=nei_packed[..., -self.t_h:, :],
-                        return_mean=True,
-                    )
+                ego_s1=ego_traj[..., -self.t_h:, :],
+                nei_s1=nei_packed[..., -self.t_h:, :],
+                return_mean=True,
+            )
             y_ego = y_ego_packed[..., 0, :, :]
             y_nei = y_ego_packed[..., 1:, :, :]
 
@@ -137,10 +142,10 @@ class GroupingKernel(torch.nn.Module):
 
             if self.previews_only:
                 y_ego_preview_packed, _ = self.ego_pred.implement(
-                            ego_s1=y_ego,
-                            nei_s1=y_ego_packed,
-                            return_mean=True,
-                        )
+                    ego_s1=y_ego,
+                    nei_s1=y_ego_packed,
+                    return_mean=True,
+                )
                 y_ego_preview = y_ego_preview_packed[..., 0, :, :]
                 y_nei_preview = y_ego_preview_packed[..., 1:, :, :]
 
@@ -153,27 +158,32 @@ class GroupingKernel(torch.nn.Module):
                     y_ego,
                     y_ego_preview
                 ], dim=-2)
-        
+
         else:
             if self.previews_only:
-                raise ValueError('This args can only be used when --use_mixed_trajectory 1.')
-            
+                raise ValueError(
+                    'This args can only be used when --use_mixed_trajectory 1.')
+
             nei_pred_train = nei_trajs[..., -self.t_f:, :]
             y_nei = None
         # ------------------------
         # MARK: - Embed and Encode
         # ------------------------
-        # Encode ego 
-        f_ego = self.ego_te(ego_traj) # (bs, obs_steps, d)
+        # Encode ego
+        f_ego = self.ego_te(ego_traj)  # (bs, obs_steps, d)
 
         # predict socialality
-        socialality = self.socialality_pred(f_ego) # (bs, 2)
+        socialality = self.socialality_pred(f_ego)  # (bs, 2)
 
         # ------------------------------------
         # MARK: - Socialality Anchor Ablations
         # ------------------------------------
         # Only used in ablations
-        need_modify = (self.fix_dis or self.fix_speed or self.set_anchor)
+        need_modify = (self.fix_dis
+                       or self.fix_speed
+                       or self.set_anchor
+                       or self.disable_dis_anchor
+                       or self.disable_speed_anchor)
         if need_modify:
             socialality = socialality.clone()
 
@@ -199,6 +209,22 @@ class GroupingKernel(torch.nn.Module):
             if self.fix_speed and not (self.set_anchor and self.set_speed_anchor != -1):
                 socialality[..., 1] = torch.detach(socialality[..., 1])
 
+            # -------------------------
+            # Disable anchor
+            # -------------------------
+            # can only disable one of the two anchors, both anchors being disabled means that
+            # the whole grouping kernel is disabled, this condition is controlled by another
+            # ablation arg TODO
+            if self.disable_dis_anchor and self.disable_speed_anchor:
+                raise ValueError('distance anchor and speed anchor \
+                                 cannot be disabled at the same time!')
+
+            if self.disable_dis_anchor and not self.disable_speed_anchor:
+                socialality = socialality[..., 1:]
+
+            if not self.disable_dis_anchor and self.disable_speed_anchor:
+                socialality = socialality[..., :1]
+
         # --------------------------------
         # Socialality achors visualization
         # --------------------------------
@@ -207,23 +233,30 @@ class GroupingKernel(torch.nn.Module):
             vis_socialality(socialality)
 
         # grouping agents using predicted socialality factor
-        group_mask, trajs_group, _ = self.grouping(ego_traj, 
-                                                   nei_trajs, 
-                                                   socialality)
+        group_mask, trajs_group, _ = self.grouping(ego_traj,
+                                                   nei_trajs,
+                                                   socialality,
+                                                   self.disable_dis_anchor,
+                                                   self.disable_speed_anchor)
 
         return group_mask, trajs_group, f_ego, socialality, nei_pred_train, y_nei, nei_trajs
 
 
 class SocialalityKernel(torch.nn.Module):
 
-    def __init__(self, 
+    def __init__(self,
                  obs_steps: int,
                  *args, **kwargs):
         super().__init__()
 
         self.obs_steps = obs_steps
 
-    def forward(self, x_ego_2d: torch.Tensor, x_nei_2d: torch.Tensor, tolerance: torch.Tensor):
+    def forward(self,
+                x_ego_2d: torch.Tensor,
+                x_nei_2d: torch.Tensor,
+                tolerance: torch.Tensor,
+                disable_dis: int,
+                disable_speed: int):
 
         ego_move = x_ego_2d[..., -1, :] - x_ego_2d[..., 0, :]
         ego_move_dis = torch.norm(ego_move, p=2, dim=-1)
@@ -233,32 +266,50 @@ class SocialalityKernel(torch.nn.Module):
 
         group_mask = torch.ones(x_nei_2d.shape[:-2]).to(ego_move.device)
 
-        for t in range(x_ego_2d.shape[-2]):
-            _vec = x_nei_2d[..., t, :] - x_ego_2d[:, None, t, :]
-            _dis = torch.norm(_vec, p=2, dim=-1)
-            group_mask = group_mask * (_dis < (1.0 + tolerance[..., :-1]) * ego_move_dis[..., None])
-        
-        group_mask = group_mask * ((1 - tolerance[..., -1:]) < vel_ratio) * (vel_ratio < (1 + tolerance[..., -1:]))
+        if not disable_dis and not disable_speed:
+            for t in range(x_ego_2d.shape[-2]):
+                _vec = x_nei_2d[..., t, :] - x_ego_2d[:, None, t, :]
+                _dis = torch.norm(_vec, p=2, dim=-1)
+                group_mask = group_mask * \
+                    (_dis < (1.0 + tolerance[..., :-1])
+                     * ego_move_dis[..., None])
+
+            group_mask = group_mask * \
+                ((1 - tolerance[..., -1:]) < vel_ratio) * \
+                (vel_ratio < (1 + tolerance[..., -1:]))
+            
+        if disable_dis and not disable_speed:
+            group_mask = group_mask * \
+                ((1 - tolerance[..., -1:]) < vel_ratio) * \
+                (vel_ratio < (1 + tolerance[..., -1:]))
+            
+        if disable_speed and not disable_dis:
+            for t in range(x_ego_2d.shape[-2]):
+                _vec = x_nei_2d[..., t, :] - x_ego_2d[:, None, t, :]
+                _dis = torch.norm(_vec, p=2, dim=-1)
+                group_mask = group_mask * \
+                    (_dis < (1.0 + tolerance)
+                     * ego_move_dis[..., None])
 
         trajs_group = (
             x_nei_2d * group_mask[..., None, None]).to(dtype=torch.float32)
         group_num = torch.sum(group_mask, dim=-1)
 
         return group_mask, trajs_group, group_num
-    
+
+
 class LongTermKernel(torch.nn.Module):
     def __init__(self,
-                 threshold: float, 
-                 *args, 
+                 threshold: float,
+                 *args,
                  **kwargs):
-    
+
         super().__init__()
 
         self.threshold = threshold
-    
+
     def forward(self, x_ego: torch.Tensor, x_nei: torch.Tensor):
         """
         x_ego and x_nei consist of selected only time steps.
         """
         return
-    

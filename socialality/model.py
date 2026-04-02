@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2026-01-22 09:48:21
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-03-04 11:26:18
+@LastEditTime: 2026-04-02 20:09:23
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2026 Ziqian Zou, All Rights Reserved.
@@ -57,6 +57,8 @@ class SocialalityModel(Model):
             set_speed_anchor = self.r.set_speed_anchor,
             previews_only = self.r.previews_only,
             vis_anchors = self.r.vis_anchors,
+            disable_dis_anchor = self.r.disable_distance_anchor,
+            disable_speed_anchor = self.r.disable_speed_anchor,
         )
 
         # Perception mechanism
@@ -141,11 +143,29 @@ class SocialalityModel(Model):
         # -----------------------
         # MARK: - Fusion Strategy
         # -----------------------
-        f_ego = f_ego * (1.0 + socialality[..., None, -1:])
-        f_group = f_group * (1.0 / (1.0 + socialality[..., None, :1]))
-        f_out_group = (f_out_group *
-                       (1 / (1 + socialality[..., None, -1:])) *
-                       (1 / (1 + socialality[..., None, :1]))) 
+        # ablation args `disable_distance_anchor` and `disable_speed_anchor`
+        # are also used here
+        if not self.r.disable_distance_anchor and not self.r.disable_speed_anchor:
+            f_ego = f_ego * (1.0 + socialality[..., None, -1:])
+            f_group = f_group * (1.0 / (1.0 + socialality[..., None, :1]))
+            f_out_group = (f_out_group *
+                        (1 / (1 + socialality[..., None, -1:])) *
+                        (1 / (1 + socialality[..., None, :1]))) 
+        
+        # fusion strategy when disable distance anchor
+        if self.r.disable_distance_anchor:
+            f_ego = f_ego * (1.0 + socialality[..., None, -1:])
+            f_group = f_group
+            f_out_group = (f_out_group *
+                        (1 / (1 + socialality[..., None, -1:])))
+        
+        # fusion strategy when disable speed anchor
+        if self.r.disable_speed_anchor:
+            f_ego = f_ego
+            f_group = f_group * (1.0 / (1.0 + socialality[..., None, :1]))
+            f_out_group = (f_out_group *
+                        (1 / (1 + socialality[..., None, :1])))
+
         f = torch.concat([f_ego, f_group, f_out_group], dim=-1)
         f = self.concat_fc(f)
 

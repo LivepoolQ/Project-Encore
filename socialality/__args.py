@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2025-12-11 17:21:42
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-03-04 10:18:41
+@LastEditTime: 2026-04-02 10:26:39
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2025 Ziqian Zou, All Rights Reserved.
@@ -176,6 +176,20 @@ class SocialalityArgs(EmptyArgs):
         Set distance anchor value globally.
         """
         return self._arg('set_speed_anchor', -1, argtype=STATIC, short_name='set_speed')
+    
+    @property
+    def disable_distance_anchor(self) -> int:
+        """
+        Choose whether to disable distance anchor.
+        """
+        return self._arg('disable_distance_anchor', 0, argtype=STATIC, desc_in_model_summary='disable distance anchor', short_name='disable_dis')
+    
+    @property
+    def disable_speed_anchor(self) -> int:
+        """
+        Choose whether to disable speed anchor.
+        """
+        return self._arg('disable_speed_anchor', 0, argtype=STATIC, desc_in_model_summary='disable speed anchor', short_name='disable_speed')
     
     @property
     def previews_only(self) -> int:
