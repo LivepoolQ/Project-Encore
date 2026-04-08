@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2025-12-11 17:21:42
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-04-02 10:26:39
+@LastEditTime: 2026-04-08 19:07:47
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2025 Ziqian Zou, All Rights Reserved.
@@ -198,6 +198,13 @@ class SocialalityArgs(EmptyArgs):
         NOTE This args can only be used when `--use_mixed_trajectory 1`.
         """
         return self._arg('previews_only', 0, argtype=STATIC, desc_in_model_summary='only previews')
+    
+    @property
+    def current_only(self) -> int:
+        """
+        Choose whether to only use current step when grouping.
+        """
+        return self._arg('current_only', 0, argtype=STATIC, desc_in_model_summary='only current')
     
     # --------------------------
     # MARK: - Visualization Args

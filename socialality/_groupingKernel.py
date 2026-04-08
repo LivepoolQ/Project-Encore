@@ -27,6 +27,7 @@ class GroupingKernel(torch.nn.Module):
                  vis_anchors: int = 0,
                  disable_dis_anchor: int = 0,
                  disable_speed_anchor: int = 0,
+                 current_only: int = 0,
                  *args, **kwargs):
         super().__init__()
 
@@ -49,6 +50,7 @@ class GroupingKernel(torch.nn.Module):
         self.vis_anchors = vis_anchors
         self.disable_dis_anchor = disable_dis_anchor
         self.disable_speed_anchor = disable_speed_anchor
+        self.current_only = current_only
 
         # # Encode ego's obs
         self.ego_te = torch.nn.Sequential(
@@ -77,7 +79,8 @@ class GroupingKernel(torch.nn.Module):
 
         # Socialality Kernel (grouping)
         self.grouping = SocialalityKernel(
-            obs_steps=self.obs_steps
+            obs_steps=self.obs_steps,
+            current_only=self.current_only,
         )
 
         # `linear` type is only used in ablation
@@ -246,10 +249,12 @@ class SocialalityKernel(torch.nn.Module):
 
     def __init__(self,
                  obs_steps: int,
+                 current_only: int,
                  *args, **kwargs):
         super().__init__()
 
         self.obs_steps = obs_steps
+        self.current_only = current_only
 
     def forward(self,
                 x_ego_2d: torch.Tensor,
@@ -290,6 +295,13 @@ class SocialalityKernel(torch.nn.Module):
                 group_mask = group_mask * \
                     (_dis < (1.0 + tolerance)
                      * ego_move_dis[..., None])
+        
+        if self.current_only:
+            _vec = x_nei_2d[..., -1, :] - x_ego_2d[:, None, -1, :]
+            _dis = torch.norm(_vec, p=2, dim=-1)
+            group_mask = torch.ones(x_nei_2d.shape[:-2]).to(ego_move.device) * \
+                (_dis < (1.0 + tolerance[..., :-1])
+                    * ego_move_dis[..., None])
 
         trajs_group = (
             x_nei_2d * group_mask[..., None, None]).to(dtype=torch.float32)
