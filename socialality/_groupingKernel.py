@@ -28,6 +28,7 @@ class GroupingKernel(torch.nn.Module):
                  disable_dis_anchor: int = 0,
                  disable_speed_anchor: int = 0,
                  current_only: int = 0,
+                 set_grouping_ratio: float = -1,
                  *args, **kwargs):
         super().__init__()
 
@@ -51,6 +52,7 @@ class GroupingKernel(torch.nn.Module):
         self.disable_dis_anchor = disable_dis_anchor
         self.disable_speed_anchor = disable_speed_anchor
         self.current_only = current_only
+        self.set_grouping_ratio = set_grouping_ratio
 
         # # Encode ego's obs
         self.ego_te = torch.nn.Sequential(
@@ -232,8 +234,26 @@ class GroupingKernel(torch.nn.Module):
         # Socialality achors visualization
         # --------------------------------
         if self.vis_anchors:
+            # Resort trajectories according to the last point.
+            # Here `x_ego` is actually `x_nei` for the ego agent.
+            d = torch.norm(nei_trajs[..., self.t_h, :], p=2, dim=-1)
+            batch_id = d.argsort()
+            batch_num = torch.arange(nei_trajs.shape[0])[:, None]
+            nei_trajs = nei_trajs[batch_num, batch_id]
+
+            # Assign labels for better visualization
+            M, N = nei_trajs.shape[:2]
+            IDs = np.array([[f'b{m}_n{n}' for n in range(N)] for m in range(M)])
+
+            from qpid.utils import get_mask
+            # Remove invalid trajectories.
+            mask = get_mask(nei_trajs.abs().sum([-1, -2]))
+            idx = torch.where(mask.bool())
+
+            IDs = list(IDs[idx])
+
             from .utils import vis_socialality
-            vis_socialality(socialality)
+            vis_socialality(socialality, IDs)
 
         # grouping agents using predicted socialality factor
         group_mask, trajs_group, _ = self.grouping(ego_traj,
@@ -241,6 +261,14 @@ class GroupingKernel(torch.nn.Module):
                                                    socialality,
                                                    self.disable_dis_anchor,
                                                    self.disable_speed_anchor)
+
+        # --------------------------
+        # MARK: - Grouping Ablations
+        # --------------------------
+        # Only used in ablations
+        if (r:=self.set_grouping_ratio) >= 0:
+            group_mask = torch.rand(group_mask.shape) < r
+            group_mask = group_mask.to(torch.float32).to(ego_traj.device)
 
         return group_mask, trajs_group, f_ego, socialality, nei_pred_train, y_nei, nei_trajs
 

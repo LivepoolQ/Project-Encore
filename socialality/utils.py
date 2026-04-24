@@ -2,13 +2,16 @@
 @Author: Conghao Wong
 @Date: 2025-12-09 15:50:31
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-01-28 19:44:18
+@LastEditTime: 2026-04-24 11:27:20
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
 
 import matplotlib.pyplot as plt
 import torch
+from matplotlib import cm
+from matplotlib.colors import Normalize
+import numpy as np
 
 from qpid.model import layers
 
@@ -85,25 +88,38 @@ class Gate(torch.nn.Module):
         return torch.maximum(x, torch.ones_like(x) * self.gate)
     
     
-def vis_socialality(anchors:torch.Tensor):
+def vis_socialality(anchors:torch.Tensor, IDs=None):
 
-    plt.figure(figsize=(4, 4))
+    plt.close('Socialality Anchors')
+    plt.figure('Socialality Anchors', figsize=(4, 4))
 
-    plt.scatter(
+    import seaborn as sns
+    sns.kdeplot(x=anchors.numpy().T[0], y=anchors.numpy().T[1], fill=True, alpha=0.3)
+
+    scatter = plt.scatter(
         anchors[:, 0],
         anchors[:, 1],
         s=20,
         alpha=0.3
     )
+
+    if IDs:
+        import mplcursors
+
+        cursor = mplcursors.cursor(scatter, hover=True)
+
+        @cursor.connect("add")
+        def on_add(sel):
+            label = IDs[sel.index]
+            sel.annotation.set_text(label)
+            sel.annotation.get_bbox_patch().set(fc="gray", alpha=0.5)
+
     plt.xlabel(r'$\tau^{a}$')
     plt.ylabel(r'$\tau^{b}$')
     plt.title('Socialality Anchors')
     plt.axis('equal')
 
-    import seaborn as sns
-    sns.kdeplot(x=anchors.numpy().T[0], y=anchors.numpy().T[1], fill=True, alpha=0.5)
-
     plt.show()
 
     return anchors
-    
+

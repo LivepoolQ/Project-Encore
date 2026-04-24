@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2025-12-11 17:21:42
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-04-08 19:07:47
+@LastEditTime: 2026-04-24 11:22:35
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2025 Ziqian Zou, All Rights Reserved.
@@ -206,6 +206,13 @@ class SocialalityArgs(EmptyArgs):
         """
         return self._arg('current_only', 0, argtype=STATIC, desc_in_model_summary='only current')
     
+    @property
+    def set_grouping_ratio(self) -> float:
+        """
+        Set grouping ratio value, which will randomly assign part of the neighbors as a group.
+        NOTE This args can only be used as counterfactual anynasis.
+        """
+        return self._arg('set_grouping_ratio', -1.0, argtype=TEMPORARY)    
     # --------------------------
     # MARK: - Visualization Args
     # --------------------------

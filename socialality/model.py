@@ -60,6 +60,7 @@ class SocialalityModel(Model):
             disable_dis_anchor = self.r.disable_distance_anchor,
             disable_speed_anchor = self.r.disable_speed_anchor,
             current_only = self.r.current_only,
+            set_grouping_ratio = self.r.set_grouping_ratio,
         )
 
         # Perception mechanism
