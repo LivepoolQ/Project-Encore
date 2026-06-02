@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2025-12-11 17:21:42
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-04-24 11:22:35
+@LastEditTime: 2026-06-02 10:05:25
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2025 Ziqian Zou, All Rights Reserved.
@@ -13,24 +13,6 @@ from qpid.args import DYNAMIC, STATIC, TEMPORARY, EmptyArgs
 
 
 class SocialalityArgs(EmptyArgs):
-
-    @property
-    def Kc(self) -> int:
-        """
-
-        """
-        return self._arg('Kc', 20, argtype=STATIC)
-
-    @property
-    def use_group(self) -> int:
-        """
-        Choose whether to use pedestrian groups when calculating SocialCircle.
-        """
-        return self._arg('use_group', 0, argtype=STATIC, desc_in_model_summary='use kernel function')
-
-    @property
-    def group_distance(self) -> int:
-        return self._arg('group_distance', 6, argtype=STATIC)
 
     @property
     def output_units(self) -> int:
@@ -91,9 +73,9 @@ class SocialalityArgs(EmptyArgs):
     def ego_predictor_type(self) -> str:
         """
         Choose which kind of backbones ego predictor will use.
-        - `linear`:
-        - `fc`:
-        - `tran`:
+        - `linear`: Linearly fit the observed trajectory
+        - `fc`: Fully connected layer
+        - `tran`: Transformer
         """
         return self._arg('ego_predictor_type', 'tran', argtype=DYNAMIC,
                          desc_in_model_summary=('Ego predictor', 'type'))
@@ -118,9 +100,8 @@ class SocialalityArgs(EmptyArgs):
     def group_type(self) -> int:
         """
         Choose which group method to use, including `[0, 1, 2]`:
-        - `0`: Vanilla ;
-        - `1`: TODO Model;
-        - `2`: TODO.
+        - `0`: Original GPCC Model ;
+        - `1`: Socialality Model.
         """
         return self._arg('group_type', 1, argtype=STATIC, desc_in_model_summary='group type')
 
