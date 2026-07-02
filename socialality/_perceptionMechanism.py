@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2026-01-22 11:00:02
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-01-22 14:24:25
+@LastEditTime: 2026-07-02 15:51:21
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2026 Ziqian Zou, All Rights Reserved.
@@ -23,6 +23,7 @@ class PerceptionMechanism(torch.nn.Module):
                  *args, 
                  traj_dim: int,
                  feature_dim: int,
+                 adaptive_fov: int = 0,
                  view_angle: float = np.pi,
                  **kwargs):
         super().__init__()
@@ -30,6 +31,7 @@ class PerceptionMechanism(torch.nn.Module):
         self.traj_dim = traj_dim
         self.feature_dim = feature_dim
         self.view_angle = view_angle
+        self.adaptive_fov = adaptive_fov
 
         # Group trajectory encoding
         self.ge = torch.nn.Sequential(
@@ -45,6 +47,7 @@ class PerceptionMechanism(torch.nn.Module):
         self.outper = HumanPerception(
             feature_dim=self.feature_dim,
             view_angle=self.view_angle,
+            adaptive_fov=self.adaptive_fov,
         )
 
     def forward(self, 
@@ -84,12 +87,21 @@ class HumanPerception(torch.nn.Module):
 
     def __init__(self, 
                  feature_dim: int,
+                 adaptive_fov: int = 0,
                  view_angle: float = np.pi,
                  *args, **kwargs):
         super().__init__()
         
         self.feature_dim = feature_dim
+        self.adaptive_fov = adaptive_fov
         self.view_angle = view_angle
+
+        if self.adaptive_fov:
+            self.fov_encoding = torch.nn.Sequential(
+                layers.Dense(50, self.feature_dim, torch.nn.ReLU),
+                layers.Dense(self.feature_dim, self.feature_dim, torch.nn.ReLU),
+                layers.Dense(self.feature_dim, 1, torch.nn.Tanh),
+            )
 
         self.region_emb = torch.nn.Sequential(
             layers.Dense(3, self.feature_dim, torch.nn.ReLU),
@@ -118,6 +130,9 @@ class HumanPerception(torch.nn.Module):
         nei_dir = torch.atan2(nei_posion_vector[..., 0],
                               nei_posion_vector[..., 1])
         nei_dir = nei_dir % (2*np.pi)
+
+        if self.adaptive_fov:
+            self.view_angle = self.fov_encoding(nei_dir) * (np.pi/2) + 1.5 * np.pi
 
         # mask neighbors
         nei_mask = (

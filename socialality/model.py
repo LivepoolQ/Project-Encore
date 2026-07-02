@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2026-01-22 09:48:21
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-04-08 15:30:17
+@LastEditTime: 2026-07-02 16:37:08
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2026 Ziqian Zou, All Rights Reserved.
@@ -68,6 +68,7 @@ class SocialalityModel(Model):
             traj_dim=self.dim,
             feature_dim=self.r.output_units,
             view_angle=self.r.view_angle,
+            adaptive_fov = self.r.adaptive_fov,
         )
 
         # Concat all ego, group, out-of-group agents feature and encode

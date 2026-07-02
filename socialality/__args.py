@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2025-12-11 17:21:42
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-06-02 10:05:25
+@LastEditTime: 2026-07-02 15:11:11
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2025 Ziqian Zou, All Rights Reserved.
@@ -112,6 +112,14 @@ class SocialalityArgs(EmptyArgs):
         """
         return self._arg('ego_capacity', -1, DYNAMIC,
                          desc_in_model_summary=('Ego predictor', 'ego capacity'))
+    
+    @property
+    def adaptive_fov(self) -> int:
+        """
+        Whether using adaptive fov in perception mechanism.
+        """
+        return self._arg('adaptive_fov', 0, STATIC,
+                         desc_in_model_summary=('use adaptive fov'))
     
     # ---------------------
     # MARK: - Ablation Args
