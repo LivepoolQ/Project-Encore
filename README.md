@@ -3,7 +3,7 @@
 You can clone this repository by the following command:
 
 ```bash
-git clone https://github.com/cocoon2wong/Rev.git
+git clone https://github.com/LivepoolQ/Project-Encore.git
 ```
 
 Then, run the following command to initialize all submodules:
