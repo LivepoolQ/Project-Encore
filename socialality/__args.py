@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2025-12-11 17:21:42
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-07-02 15:11:11
+@LastEditTime: 2026-07-09 09:34:45
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2025 Ziqian Zou, All Rights Reserved.
@@ -249,6 +249,15 @@ class SocialalityArgs(EmptyArgs):
         Choose whether to visualize anchors.
         """
         return self._arg('vis_anchors', 0, argtype=TEMPORARY)
+
+    @property
+    def use_team_group_mask(self) -> int:
+        """
+        Choose whether to use the ground truth team group mask instead of the grouping kernel.
+
+        NOTE This arg can only be used in NBA dataset.
+        """
+        return self._arg('use_team_group_mask', 0, argtype=STATIC)
 
     def _init_all_args(self):
         super()._init_all_args()

@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2026-01-22 11:00:02
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-07-02 15:51:21
+@LastEditTime: 2026-07-08 18:17:17
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2026 Ziqian Zou, All Rights Reserved.
@@ -23,6 +23,7 @@ class PerceptionMechanism(torch.nn.Module):
                  *args, 
                  traj_dim: int,
                  feature_dim: int,
+                 max_agents: int = 50,
                  adaptive_fov: int = 0,
                  view_angle: float = np.pi,
                  **kwargs):
@@ -32,6 +33,7 @@ class PerceptionMechanism(torch.nn.Module):
         self.feature_dim = feature_dim
         self.view_angle = view_angle
         self.adaptive_fov = adaptive_fov
+        self.max_agents = max_agents
 
         # Group trajectory encoding
         self.ge = torch.nn.Sequential(
@@ -48,6 +50,7 @@ class PerceptionMechanism(torch.nn.Module):
             feature_dim=self.feature_dim,
             view_angle=self.view_angle,
             adaptive_fov=self.adaptive_fov,
+            max_agents=self.max_agents,
         )
 
     def forward(self, 
@@ -89,16 +92,18 @@ class HumanPerception(torch.nn.Module):
                  feature_dim: int,
                  adaptive_fov: int = 0,
                  view_angle: float = np.pi,
+                 max_agents: int = 50,
                  *args, **kwargs):
         super().__init__()
         
         self.feature_dim = feature_dim
         self.adaptive_fov = adaptive_fov
         self.view_angle = view_angle
+        self.max_agents = max_agents
 
         if self.adaptive_fov:
             self.fov_encoding = torch.nn.Sequential(
-                layers.Dense(50, self.feature_dim, torch.nn.ReLU),
+                layers.Dense(self.max_agents, self.feature_dim, torch.nn.ReLU),
                 layers.Dense(self.feature_dim, self.feature_dim, torch.nn.ReLU),
                 layers.Dense(self.feature_dim, 1, torch.nn.Tanh),
             )

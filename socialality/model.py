@@ -35,8 +35,11 @@ class SocialalityModel(Model):
         self.r = self.sa_args
 
         # Set model inputs
-        self.set_inputs(INPUT_TYPES.OBSERVED_TRAJ,
-                        INPUT_TYPES.NEIGHBOR_TRAJ)
+        inputs = [INPUT_TYPES.OBSERVED_TRAJ,
+                  INPUT_TYPES.NEIGHBOR_TRAJ]
+        if self.r.use_team_group_mask:
+            inputs.append('TEAM_GROUP_MASK')
+        self.set_inputs(*inputs)
 
         # Grouping kernel
         self.grouping = GroupingKernel(
@@ -69,6 +72,7 @@ class SocialalityModel(Model):
             feature_dim=self.r.output_units,
             view_angle=self.r.view_angle,
             adaptive_fov = self.r.adaptive_fov,
+            max_agents = self.args.max_agents,
         )
 
         # Concat all ego, group, out-of-group agents feature and encode
@@ -126,13 +130,14 @@ class SocialalityModel(Model):
         x_ego = self.get_input(inputs, INPUT_TYPES.OBSERVED_TRAJ)
         x_nei = self.get_input(inputs, INPUT_TYPES.NEIGHBOR_TRAJ)
 
-        # -----------------------
-        # MARK: - Grouping Kernel
-        # -----------------------
         group_mask, trajs_group, f_ego, socialality, nei_pred_train, y_nei, grouping_justifications = self.grouping(
             x_ego, 
             x_nei, 
             training)
+
+        if self.r.use_team_group_mask:
+            group_mask = self.get_input(inputs, 'TEAM_GROUP_MASK')
+            trajs_group = (grouping_justifications * group_mask[..., None, None]).to(dtype=torch.float32)
 
         # ----------------------------
         # MARK: - Perception Mechanism
