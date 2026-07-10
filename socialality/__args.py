@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2025-12-11 17:21:42
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-07-09 09:34:45
+@LastEditTime: 2026-07-10 10:42:22
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2025 Ziqian Zou, All Rights Reserved.
@@ -202,6 +202,14 @@ class SocialalityArgs(EmptyArgs):
         NOTE This args can only be used as counterfactual anynasis.
         """
         return self._arg('set_grouping_ratio', -1.0, argtype=TEMPORARY)    
+    
+    @property
+    def remove_modulation(self) -> int:
+        """
+        Choose whether to remove modulation when training.
+        """
+        return self._arg('remove_modulation', 0, argtype=STATIC, desc_in_model_summary='remove modulation')
+    
     # --------------------------
     # MARK: - Visualization Args
     # --------------------------

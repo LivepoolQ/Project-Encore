@@ -154,11 +154,12 @@ class SocialalityModel(Model):
         # ablation args `disable_distance_anchor` and `disable_speed_anchor`
         # are also used here
         if not self.r.disable_distance_anchor and not self.r.disable_speed_anchor:
-            f_ego = f_ego * (1.0 + socialality[..., None, -1:])
-            f_group = f_group * (1.0 / (1.0 + socialality[..., None, :1]))
-            f_out_group = (f_out_group *
-                        (1 / (1 + socialality[..., None, -1:])) *
-                        (1 / (1 + socialality[..., None, :1]))) 
+            if not self.r.remove_modulation:
+                f_ego = f_ego * (1.0 + socialality[..., None, -1:])
+                f_group = f_group * (1.0 / (1.0 + socialality[..., None, :1]))
+                f_out_group = (f_out_group *
+                            (1 / (1 + socialality[..., None, -1:])) *
+                            (1 / (1 + socialality[..., None, :1]))) 
         
         # fusion strategy when disable distance anchor
         if self.r.disable_distance_anchor:
