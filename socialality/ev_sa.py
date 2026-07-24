@@ -126,10 +126,10 @@ class EVSocialalityModel(Model):
         )
 
         self.T = transformer.Transformer(
-            num_layers=4,
+            num_layers=2,
             d_model=192,
             num_heads=8,
-            dff=512,
+            dff=256,
             input_vocab_size=self.Tchannels_en,
             target_vocab_size=self.Tchannels_de,
             pe_input=self.Tsteps_en,
