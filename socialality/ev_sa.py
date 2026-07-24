@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2026-01-22 09:48:21
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-07-24 09:45:38
+@LastEditTime: 2026-07-24 09:45:21
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2026 Ziqian Zou, All Rights Reserved.
@@ -18,14 +18,12 @@ from qpid.training.loss import l2
 
 from .__args import SocialalityArgs
 from ._groupingKernel import GroupingKernel
-from ._perceptionMechanism import PerceptionMechanism
-from .backbone_utils._selfBias import SelfBiasLayer
+from ._perceptionMechanism import INF, PerceptionMechanism
 from .egoLoss import EgoLoss
 from .group_vis.groupVis import modify_qpid_utils
-from .linearDiffEncoding import LinearDiffEncoding
 
 
-class ResonanceSAModel(Model):
+class EVSocialalityModel(Model):
     def __init__(self, structure=None, *args, **kwargs):
         super().__init__(structure, *args, **kwargs)
 
@@ -42,6 +40,29 @@ class ResonanceSAModel(Model):
         if self.r.use_team_group_mask:
             inputs.append('TEAM_GROUP_MASK')
         self.set_inputs(*inputs)
+
+        # Layers
+        tlayer, itlayer = layers.get_transform_layers('haar')
+
+        # Transform layers
+        self.t1 = tlayer((self.args.obs_frames, self.dim))
+        self.it1 = itlayer((len(self.output_pred_steps), self.dim))
+
+        # Bilinear structure (outer product + pooling + fc)
+        # For trajectories
+        self.outer = layers.OuterLayer(self.d//2, self.d//2)
+        self.pooling = layers.MaxPooling2D((2, 2))
+        self.flatten = layers.Flatten(axes_num=2)
+        self.outer_fc = layers.Dense((self.d//4)**2, self.d//2, torch.nn.Tanh)
+
+        # Shapes
+        self.Tsteps_en, self.Tchannels_en = self.t1.Tshape
+        self.Tsteps_de, self.Tchannels_de = self.it1.Tshape
+
+        # Trajectory encoding
+        self.te = layers.TrajEncoding(self.dim, self.d//2,
+                                      torch.nn.Tanh,
+                                      transform_layer=self.t1)
 
         # Grouping kernel
         self.grouping = GroupingKernel(
@@ -104,6 +125,18 @@ class ResonanceSAModel(Model):
             include_top=False
         )
 
+        self.T = transformer.Transformer(
+            num_layers=4,
+            d_model=192,
+            num_heads=8,
+            dff=512,
+            input_vocab_size=self.Tchannels_en,
+            target_vocab_size=self.Tchannels_de,
+            pe_input=self.Tsteps_en,
+            pe_target=self.Tsteps_en,
+            include_top=False
+        )
+
         # Noise encoding
         self.ie = torch.nn.Sequential(
             layers.Dense(input_units=self.d_id, 
@@ -118,31 +151,20 @@ class ResonanceSAModel(Model):
         self.ms_fc = layers.Dense(self.r.output_units * 8,
                                   self.r.generation_num,
                                   torch.nn.Tanh)
+        self.ms_fc_t = layers.Dense(self.r.output_units * 6,
+                                  self.r.generation_num,
+                                  torch.nn.Tanh)
         self.ms_conv = layers.GraphConv(self.r.output_units * 4, self.r.output_units * 8)
+        self.ms_conv_t = layers.GraphConv(self.r.output_units * 6, self.r.output_units * 8)
 
         # Decoder layers
         self.decoder_fc1 = layers.Dense(self.r.output_units * 8, self.r.output_units * 8, torch.nn.Tanh)
         self.decoder_fc2 = layers.Dense(self.r.output_units * 8,
                                         self.args.pred_frames * self.dim)
-        # Layers
-        # Transform layers
-        t_type, it_type = layers.get_transform_layers('none')
-        self.tlayer = t_type((self.args.obs_frames, self.dim))
-        self.itlayer = it_type((self.args.pred_frames, self.dim))
-
-        # Linear difference encoding (embedding)
-        self.linear_diff = LinearDiffEncoding(
-            obs_frames=self.args.obs_frames,
-            pred_frames=self.args.pred_frames,
-            output_units=self.args.feature_dim//2,
-            transform_layer=self.tlayer,
-        )
-
-        self.b1 = SelfBiasLayer(self.args,
-                                output_units=self.d,
-                                noise_units=self.d//2,
-                                transform_layer=self.tlayer,
-                                itransform_layer=self.itlayer)
+        
+        self.decoder_fc1_t = layers.Dense(self.r.output_units * 8, self.r.output_units * 8, torch.nn.Tanh)
+        self.decoder_fc2_t = layers.Dense(self.r.output_units * 8,
+                                        self.args.pred_frames * self.dim)
         
     def forward(self, inputs, training=None, mask=None, *args, **kwargs):
         # --------------------
@@ -151,17 +173,27 @@ class ResonanceSAModel(Model):
         x_ego = self.get_input(inputs, INPUT_TYPES.OBSERVED_TRAJ)
         x_nei = self.get_input(inputs, INPUT_TYPES.NEIGHBOR_TRAJ)
 
-        # Encode features of ego trajectories (diff encoding)
-        f_diff, linear_fit, linear_base = self.linear_diff(x_ego)
-
-        # Predict the self-bias trajectory
-        self_bias = self.b1(linear_fit, f_diff,
-                                self.output_pred_steps, training)
+        # Trajectory embedding and encoding
+        f_ego_t = self.te(x_ego)
+        f_ego_t = self.outer(f_ego_t, f_ego_t)
+        f_ego_t = self.pooling(f_ego_t)
+        f_ego_t = self.flatten(f_ego_t)
+        f_ego_t = self.outer_fc(f_ego_t)       # (batch, steps, 64)
 
         group_mask, trajs_group, f_ego, socialality, nei_pred_train, y_nei, grouping_justifications = self.grouping(
             x_ego, 
             x_nei, 
             training)
+        
+        # Trajectory embedding and encoding
+        f_group_t = self.te(trajs_group)
+        f_group_t = self.outer(f_group_t, f_group_t)
+        f_group_t = self.pooling(f_group_t)
+        f_group_t = self.flatten(f_group_t)
+        f_group_t = self.outer_fc(f_group_t)       # (batch, max_agents, steps, 64)
+        f_group_t_idx = torch.max(torch.sum(f_group_t**2, dim=[-1, -2]), dim=1)
+        batch_idx_group = torch.arange(f_group_t.shape[0], device=f_group_t.device)
+        f_group_t = f_group_t[batch_idx_group, f_group_t_idx.indices]
 
         if self.r.use_team_group_mask:
             group_mask = self.get_input(inputs, 'TEAM_GROUP_MASK')
@@ -175,6 +207,27 @@ class ResonanceSAModel(Model):
             x_nei, 
             group_mask, 
             trajs_group)
+        
+        # Mask neighbors
+        nei_mask = torch.sum(x_nei.abs(), dim=[-1, -2]) < (0.05 * INF)
+        nei_mask = nei_mask.to(dtype=torch.int32)
+
+        out_group_mask = (1 - group_mask) * nei_mask
+        trajs_out_group  = (
+            x_nei * out_group_mask[..., None, None]).to(dtype=torch.float32)
+        
+        # Trajectory embedding and encoding
+        f_out_group_t = self.te(trajs_out_group)
+        f_out_group_t = self.outer(f_out_group_t, f_out_group_t)
+        f_out_group_t = self.pooling(f_out_group_t)
+        f_out_group_t = self.flatten(f_out_group_t)
+        f_out_group_t = self.outer_fc(f_out_group_t)       # (batch, max_agents, steps, 64)
+        f_out_group_t_idx = torch.max(torch.sum(f_out_group_t**2, dim=[-1, -2]), dim=1)
+        batch_idx_out_group = torch.arange(f_out_group_t.shape[0], device=f_out_group_t.device)
+        f_out_group_t = f_out_group_t[batch_idx_out_group, f_out_group_t_idx.indices]
+
+        f_t = f = torch.concat([f_ego_t, f_group_t, f_out_group_t], dim=-1)
+
 
         # -----------------------
         # MARK: - Fusion Strategy
@@ -220,6 +273,22 @@ class ResonanceSAModel(Model):
         # (batch, obs + pred, out_uni * 4)
         f_tran, _ = self.bb(inputs=f, targets=pred_linear, training=training)
 
+        traj_targets = self.t1(x_ego)
+        f_tran_t, _ = self.T(inputs=f_t, targets=traj_targets, training=training)
+
+        # Multiple generations -> (batch, Kc, d)
+        adj_t = self.ms_fc_t(f_t)               # (batch, steps, Kc)
+        adj_t = torch.transpose(adj_t, -1, -2)
+        f_multi_t = self.ms_conv_t(f_tran_t, adj_t)     # (batch, Kc, d)
+
+        # Forecast keypoints -> (..., Kc, Tsteps_Key, Tchannels)
+        y_t = self.decoder_fc1_t(f_multi_t)
+        y_t = self.decoder_fc2_t(y_t)
+        y_t = torch.reshape(y_t, list(y_t.shape[:-1]) +
+                            [self.Tsteps_de, self.Tchannels_de])
+
+        y_t = self.it1(y_t)
+
         # Slice the prediction time steps
         # (batch, pred, out_uni * 4)
         f_tran = f_tran[:, self.args.obs_frames:, ...]
@@ -248,13 +317,15 @@ class ResonanceSAModel(Model):
             y = torch.reshape(y,
                               list(y.shape[:-1]) + [self.args.pred_frames,
                                                     self.dim])
+            
+            y = y + y_t
 
             all_predictions.append(y)
 
         Y = torch.concat(all_predictions, dim=-3)
 
         returns = [
-            Y + pred_linear[..., None, self.args.obs_frames:, :] + self_bias,
+            Y + pred_linear[..., None, self.args.obs_frames:, :],
         ]
 
         # Output predictions and labels to compute EgoLoss
@@ -300,8 +371,8 @@ class ResonanceSAModel(Model):
         return returns
         
 
-class ResonanceSA(Structure):
-    MODEL_TYPE = ResonanceSAModel
+class EVSocialality(Structure):
+    MODEL_TYPE = EVSocialalityModel
 
     def __init__(self, args=None,
                  manager=None,

@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2026-01-22 09:48:21
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-07-23 17:41:08
+@LastEditTime: 2026-07-24 09:45:44
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2026 Ziqian Zou, All Rights Reserved.
@@ -10,6 +10,7 @@
 
 import torch
 
+import qpid.mods.vis.helpers
 from qpid.constant import INPUT_TYPES
 from qpid.model import Model, layers, transformer
 from qpid.training import Structure
@@ -19,7 +20,6 @@ from .__args import SocialalityArgs
 from ._groupingKernel import GroupingKernel
 from ._perceptionMechanism import PerceptionMechanism
 from .egoLoss import EgoLoss
-import qpid.mods.vis.helpers
 from .group_vis.groupVis import modify_qpid_utils
 
 
