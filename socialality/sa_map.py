@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2026-01-22 09:48:21
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-07-24 09:59:15
+@LastEditTime: 2026-07-24 10:37:12
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2026 Ziqian Zou, All Rights Reserved.
@@ -21,12 +21,15 @@ from ._groupingKernel import GroupingKernel
 from ._perceptionMechanism import PerceptionMechanism
 from .egoLoss import EgoLoss
 from .group_vis.groupVis import modify_qpid_utils
+from .backbone_utils.__mapLayers import PhysicalCircleLayer
 
 
-class SocialalityModel(Model):
+class SocialalityMapModel(Model):
     def __init__(self, structure=None, *args, **kwargs):
         super().__init__(structure, *args, **kwargs)
 
+        from qpid.mods import segMaps
+        
         # Init args
         self.args._set_default('K', 1)
         self.args._set_default('K_train', 1)
@@ -36,9 +39,13 @@ class SocialalityModel(Model):
 
         # Set model inputs
         inputs = [INPUT_TYPES.OBSERVED_TRAJ,
-                  INPUT_TYPES.NEIGHBOR_TRAJ]
+                  INPUT_TYPES.NEIGHBOR_TRAJ,
+                  segMaps.INPUT_TYPES.SEG_MAP,
+                  segMaps.INPUT_TYPES.SEG_MAP_PARAS]
+        
         if self.r.use_team_group_mask:
             inputs.append('TEAM_GROUP_MASK')
+
         self.set_inputs(*inputs)
 
         # Grouping kernel
@@ -66,6 +73,17 @@ class SocialalityModel(Model):
             set_grouping_ratio = self.r.set_grouping_ratio,
         )
 
+        # PhysicalCircle (meta components) layer
+        self.pc = PhysicalCircleLayer(partitions=8,
+                                      max_partitions=self.args.obs_frames,
+                                      use_velocity=1,
+                                      use_distance=1,
+                                      use_direction=1,
+                                      vision_radius=2.0,
+                                      pool_size=-1)
+        
+        self.mfe = layers.Dense(3, self.r.output_units * 4, torch.nn.Tanh)
+
         # Perception mechanism
         self.perception = PerceptionMechanism(
             traj_dim=self.dim,
@@ -78,6 +96,12 @@ class SocialalityModel(Model):
         # Concat all ego, group, out-of-group agents feature and encode
         self.concat_fc = layers.Dense(
             self.r.output_units * 5,
+            self.r.output_units * 4,
+            activation=torch.nn.Tanh
+        )
+
+        self.concat_fc_final = layers.Dense(
+            self.r.output_units * 8,
             self.r.output_units * 4,
             activation=torch.nn.Tanh
         )
@@ -130,6 +154,9 @@ class SocialalityModel(Model):
         x_ego = self.get_input(inputs, INPUT_TYPES.OBSERVED_TRAJ)
         x_nei = self.get_input(inputs, INPUT_TYPES.NEIGHBOR_TRAJ)
 
+        f_map = self.pc.implement(self, inputs)
+        f_map = self.mfe(f_map)
+
         group_mask, trajs_group, f_ego, socialality, nei_pred_train, y_nei, grouping_justifications = self.grouping(
             x_ego, 
             x_nei, 
@@ -177,6 +204,9 @@ class SocialalityModel(Model):
 
         f = torch.concat([f_ego, f_group, f_out_group], dim=-1)
         f = self.concat_fc(f)
+
+        f = torch.concat([f, f_map], dim=-1)
+        f = self.concat_fc_final(f)
 
         # ------------------------------------
         # MARK: - Backbone (Transformer & MSN)
@@ -272,8 +302,8 @@ class SocialalityModel(Model):
         return returns
         
 
-class Socialality(Structure):
-    MODEL_TYPE = SocialalityModel
+class SocialalityMap(Structure):
+    MODEL_TYPE = SocialalityMapModel
 
     def __init__(self, args=None,
                  manager=None,
