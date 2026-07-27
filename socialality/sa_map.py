@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2026-01-22 09:48:21
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-07-24 16:54:13
+@LastEditTime: 2026-07-27 16:17:18
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2026 Ziqian Zou, All Rights Reserved.
@@ -294,9 +294,7 @@ class SocialalityMapModel(Model):
         
         if self.r.vis_group_members:
             # group member visualization
-            returns[0] = torch.flatten(trajs_group[..., 
-                                                   self.r.ego_t_h-1:self.r.ego_t_h, :],
-                                                     -3, -2)
+            returns[0] = trajs_group[..., self.r.ego_t_h-1:self.r.ego_t_h, :]
             
             if self.r.vis_grouping_window:
             # grouping stage visualization
