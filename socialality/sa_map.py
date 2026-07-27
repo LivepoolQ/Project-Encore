@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2026-01-22 09:48:21
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-07-24 10:37:12
+@LastEditTime: 2026-07-24 16:54:13
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2026 Ziqian Zou, All Rights Reserved.
@@ -84,6 +84,11 @@ class SocialalityMapModel(Model):
         
         self.mfe = layers.Dense(3, self.r.output_units * 4, torch.nn.Tanh)
 
+        self.se = torch.nn.Sequential(
+            layers.Dense(self.r.output_units * 4, self.r.output_units * 4, torch.nn.ReLU),
+            layers.Dense(self.r.output_units * 4, self.r.output_units * 4, torch.nn.Tanh),
+        )
+
         # Perception mechanism
         self.perception = PerceptionMechanism(
             traj_dim=self.dim,
@@ -155,7 +160,9 @@ class SocialalityMapModel(Model):
         x_nei = self.get_input(inputs, INPUT_TYPES.NEIGHBOR_TRAJ)
 
         f_map = self.pc.implement(self, inputs)
+        
         f_map = self.mfe(f_map)
+        f_map = self.se(f_map)
 
         group_mask, trajs_group, f_ego, socialality, nei_pred_train, y_nei, grouping_justifications = self.grouping(
             x_ego, 
@@ -204,6 +211,8 @@ class SocialalityMapModel(Model):
 
         f = torch.concat([f_ego, f_group, f_out_group], dim=-1)
         f = self.concat_fc(f)
+
+        f = self.se(f)
 
         f = torch.concat([f, f_map], dim=-1)
         f = self.concat_fc_final(f)
