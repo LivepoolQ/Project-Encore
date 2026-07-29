@@ -29,6 +29,9 @@ class GroupingKernel(torch.nn.Module):
                  disable_speed_anchor: int = 0,
                  current_only: int = 0,
                  set_grouping_ratio: float = -1,
+                 inject_noise_std: float = 0.0,
+                 swap_prediction_ratio: float = 0.0,
+                 flip_prediction_ratio: float = 0.0,
                  *args, **kwargs):
         super().__init__()
 
@@ -53,6 +56,9 @@ class GroupingKernel(torch.nn.Module):
         self.disable_speed_anchor = disable_speed_anchor
         self.current_only = current_only
         self.set_grouping_ratio = set_grouping_ratio
+        self.inject_noise_std = inject_noise_std
+        self.swap_prediction_ratio = swap_prediction_ratio
+        self.flip_prediction_ratio = flip_prediction_ratio
 
         # # Encode ego's obs
         self.ego_te = torch.nn.Sequential(
@@ -132,8 +138,33 @@ class GroupingKernel(torch.nn.Module):
                 nei_s1=nei_packed[..., -self.t_h:, :],
                 return_mean=True,
             )
+
+            if self.swap_prediction_ratio > 0.0:
+                mask = torch.rand(y_ego_packed.shape[:-2],
+                                  device=y_ego_packed.device) < self.swap_prediction_ratio
+                rand_indices = torch.argsort(torch.rand(
+                    y_ego_packed.shape[:-2], device=y_ego_packed.device), dim=-1)
+                rand_indices_expanded = rand_indices.unsqueeze(-1).unsqueeze(-1).expand(
+                    *rand_indices.shape, y_ego_packed.shape[-2], y_ego_packed.shape[-1])
+                y_swapped = torch.gather(
+                    y_ego_packed, -3, rand_indices_expanded)
+                mask = mask[..., None, None]
+                y_ego_packed = torch.where(mask, y_swapped, y_ego_packed)
+
+            if self.flip_prediction_ratio > 0.0:
+                mask = torch.rand(
+                    y_ego_packed.shape[:-2], device=y_ego_packed.device) < self.flip_prediction_ratio
+                mask = mask[..., None, None]
+                last_obs_packed = nei_packed[..., -1:, :]
+                y_flipped = 2 * last_obs_packed - y_ego_packed
+                y_ego_packed = torch.where(mask, y_flipped, y_ego_packed)
+
             y_ego = y_ego_packed[..., 0, :, :]
             y_nei = y_ego_packed[..., 1:, :, :]
+
+            if self.inject_noise_std > 0.0:
+                y_ego = y_ego + torch.randn_like(y_ego) * self.inject_noise_std
+                y_nei = y_nei + torch.randn_like(y_nei) * self.inject_noise_std
 
             # Mix up time axis
             nei_trajs = torch.concat([
@@ -243,7 +274,8 @@ class GroupingKernel(torch.nn.Module):
 
             # Assign labels for better visualization
             M, N = nei_trajs.shape[:2]
-            IDs = np.array([[f'b{m}_n{n}' for n in range(N)] for m in range(M)])
+            IDs = np.array([[f'b{m}_n{n}' for n in range(N)]
+                           for m in range(M)])
 
             from qpid.utils import get_mask
             # Remove invalid trajectories.
@@ -266,7 +298,7 @@ class GroupingKernel(torch.nn.Module):
         # MARK: - Grouping Ablations
         # --------------------------
         # Only used in ablations
-        if (r:=self.set_grouping_ratio) >= 0:
+        if (r := self.set_grouping_ratio) >= 0:
             group_mask = torch.rand(group_mask.shape) < r
             group_mask = group_mask.to(torch.float32).to(ego_traj.device)
 
@@ -310,12 +342,12 @@ class SocialalityKernel(torch.nn.Module):
             group_mask = group_mask * \
                 ((1 - tolerance[..., -1:]) < vel_ratio) * \
                 (vel_ratio < (1 + tolerance[..., -1:]))
-            
+
         if disable_dis and not disable_speed:
             group_mask = group_mask * \
                 ((1 - tolerance[..., -1:]) < vel_ratio) * \
                 (vel_ratio < (1 + tolerance[..., -1:]))
-            
+
         if disable_speed and not disable_dis:
             for t in range(x_ego_2d.shape[-2]):
                 _vec = x_nei_2d[..., t, :] - x_ego_2d[:, None, t, :]
@@ -323,7 +355,7 @@ class SocialalityKernel(torch.nn.Module):
                 group_mask = group_mask * \
                     (_dis < (1.0 + tolerance)
                      * ego_move_dis[..., None])
-        
+
         if self.current_only:
             _vec = x_nei_2d[..., -1, :] - x_ego_2d[:, None, -1, :]
             _dis = torch.norm(_vec, p=2, dim=-1)

@@ -210,6 +210,27 @@ class SocialalityArgs(EmptyArgs):
         """
         return self._arg('remove_modulation', 0, argtype=STATIC, desc_in_model_summary='remove modulation')
     
+    @property
+    def inject_noise_std(self) -> float:
+        """
+        Standard deviation of Gaussian noise injected into short-term predictions for robustness evaluation.
+        """
+        return self._arg('inject_noise_std', 0.0, argtype=DYNAMIC, desc_in_model_summary='inject noise std')
+
+    @property
+    def swap_prediction_ratio(self) -> float:
+        """
+        Ratio of agents whose short-term predictions are randomly swapped with others in the scene.
+        """
+        return self._arg('swap_prediction_ratio', 0.0, argtype=DYNAMIC, desc_in_model_summary='swap prediction ratio')
+    
+    @property
+    def flip_prediction_ratio(self) -> float:
+        """
+        Ratio of agents whose short-term predictions are randomly flipped (mirrored).
+        """
+        return self._arg('flip_prediction_ratio', 0.0, argtype=DYNAMIC, desc_in_model_summary='flip prediction ratio')
+    
     # --------------------------
     # MARK: - Visualization Args
     # --------------------------

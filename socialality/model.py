@@ -64,6 +64,9 @@ class SocialalityModel(Model):
             disable_speed_anchor = self.r.disable_speed_anchor,
             current_only = self.r.current_only,
             set_grouping_ratio = self.r.set_grouping_ratio,
+            inject_noise_std = self.r.inject_noise_std,
+            swap_prediction_ratio = self.r.swap_prediction_ratio,
+            flip_prediction_ratio = self.r.flip_prediction_ratio,
         )
 
         # Perception mechanism
