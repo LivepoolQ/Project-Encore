@@ -2,17 +2,18 @@
 @Author: Ziqian Zou
 @Date: 2026-01-22 09:48:21
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-07-29 15:09:30
+@LastEditTime: 2026-07-29 17:35:27
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2026 Ziqian Zou, All Rights Reserved.
 """
 
 import torch
+import torch.nn.functional as F
 
 import qpid.mods.vis.helpers
 from qpid.constant import INPUT_TYPES
-from qpid.model import Model, layers, transformer, process
+from qpid.model import Model, layers, process, transformer
 from qpid.mods import segMaps
 from qpid.training import Structure
 from qpid.training.loss import l2
@@ -168,11 +169,21 @@ class SocialalityMapModel(Model):
         # (batch, h, w)
         seg_maps = self.get_input(inputs, segMaps.INPUT_TYPES.SEG_MAP)
 
-        # get segmap mask 
-        seg_mask = torch.Tensor(seg_maps > MU)
-        seg_mask = torch.flatten(seg_mask, start_dim=1, end_dim=-1)
-
         _, map_pos = self.pc.implement(self, inputs)
+
+        # get segmap mask and downsample via pooling
+        if  (s:=self.r.seg_stride) > 1:
+            b, h, w = seg_maps.shape
+            seg_maps_pool = F.max_pool2d(seg_maps.unsqueeze(1), kernel_size=s, stride=s).squeeze(1)
+            seg_mask_2d = torch.Tensor(seg_maps_pool > MU)
+            
+            map_pos_2d = map_pos.view(b, h, w, -1)
+            map_pos_2d = map_pos_2d[:, ::s, ::s, :]
+            map_pos = map_pos_2d.flatten(start_dim=1, end_dim=2)
+        else:
+            seg_mask_2d = torch.Tensor(seg_maps > MU)
+
+        seg_mask = torch.flatten(seg_mask_2d, start_dim=1, end_dim=-1)
 
         # Get unprocessed positions from the `MOVE` layer
         if (m_layer := self.processor.get_layer_by_type(process.Move)):

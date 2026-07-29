@@ -121,6 +121,15 @@ class SocialalityArgs(EmptyArgs):
         return self._arg('adaptive_fov', 0, STATIC,
                          desc_in_model_summary=('use adaptive fov'))
     
+    @property
+    def seg_stride(self) -> int:
+        """
+        Stride used to downsample the segmentation map via max pooling to reduce virtual agent density.
+
+        NOTE This args is only used in sa-map model variant!
+        """
+        return self._arg('seg_stride', 1, argtype=STATIC, desc_in_model_summary='seg stride')
+
     # ---------------------
     # MARK: - Ablation Args
     # ---------------------
