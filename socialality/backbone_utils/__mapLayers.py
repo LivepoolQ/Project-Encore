@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2023-08-08 14:55:56
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-07-24 10:06:06
+@LastEditTime: 2026-07-29 10:37:24
 @Description: file content
 @Github: https://cocoon2wong.github.io
 @Copyright 2023 Conghao Wong, All Rights Reserved.
@@ -368,7 +368,7 @@ class PhysicalCircleLayer(torch.nn.Module):
             paddings = [0, 0, 0, m - n, 0, 0]
             pc = torch.nn.functional.pad(pc, paddings)
 
-        return pc
+        return pc, map_pos
 
     def implement(self, model: Model, inputs: list[torch.Tensor]):
         """
@@ -406,13 +406,13 @@ class PhysicalCircleLayer(torch.nn.Module):
         c_unpro_pos = model.picker.get_center(unprocessed_pos)[..., :2]
 
         # Compute PhysicalCircle meta components
-        physical_circle = self(seg_maps, seg_map_paras, c_obs, c_unpro_pos)
+        physical_circle, map_pos = self(seg_maps, seg_map_paras, c_obs, c_unpro_pos)
 
         # Rotate the PhysicalCircle (if needed)
         if (r_layer := model.processor.get_layer_by_type(process.Rotate)):
             physical_circle = self.rotate(physical_circle, r_layer.angles)
 
-        return physical_circle
+        return physical_circle, map_pos
 
     def rotate(self, circle: torch.Tensor, angles: torch.Tensor) -> torch.Tensor:
         """

@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2026-01-22 09:48:21
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-07-27 16:17:18
+@LastEditTime: 2026-07-29 12:12:09
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2026 Ziqian Zou, All Rights Reserved.
@@ -12,24 +12,29 @@ import torch
 
 import qpid.mods.vis.helpers
 from qpid.constant import INPUT_TYPES
-from qpid.model import Model, layers, transformer
+from qpid.model import Model, layers, transformer, process
+from qpid.mods import segMaps
 from qpid.training import Structure
 from qpid.training.loss import l2
 
 from .__args import SocialalityArgs
-from ._groupingKernel import GroupingKernel
 from ._perceptionMechanism import PerceptionMechanism
+from .backbone_utils.__mapLayers import PhysicalCircleLayer
+from .backbone_utils._segmapGrouping import GroupingKernel
 from .egoLoss import EgoLoss
 from .group_vis.groupVis import modify_qpid_utils
-from .backbone_utils.__mapLayers import PhysicalCircleLayer
+
+NORMALIZED_SIZE = None
+
+INF = 100000000
+SAFE_THRESHOLDS = 0.05
+MU = 0.00000001
 
 
 class SocialalityMapModel(Model):
     def __init__(self, structure=None, *args, **kwargs):
         super().__init__(structure, *args, **kwargs)
 
-        from qpid.mods import segMaps
-        
         # Init args
         self.args._set_default('K', 1)
         self.args._set_default('K_train', 1)
@@ -159,14 +164,70 @@ class SocialalityMapModel(Model):
         x_ego = self.get_input(inputs, INPUT_TYPES.OBSERVED_TRAJ)
         x_nei = self.get_input(inputs, INPUT_TYPES.NEIGHBOR_TRAJ)
 
-        f_map = self.pc.implement(self, inputs)
+        # Segmentaion-map-related inputs (to compute the PhysicalCircle)
+        # (batch, h, w)
+        seg_maps = self.get_input(inputs, segMaps.INPUT_TYPES.SEG_MAP)
+
+        # get segmap mask 
+        seg_mask = torch.Tensor(seg_maps > MU)
+        seg_mask = torch.flatten(seg_mask, start_dim=1, end_dim=-1)
+
+        _, map_pos = self.pc.implement(self, inputs)
+
+        # Get unprocessed positions from the `MOVE` layer
+        if (m_layer := self.processor.get_layer_by_type(process.Move)):
+            unprocessed_pos = m_layer.ref_points
+        else:
+            unprocessed_pos = torch.zeros_like(x_ego[..., -1:, :])
+
+        # Start computing the PhysicalCircle
+        # PhysicalCircle will be computed on each agent's 2D center point
+        c_obs = self.picker.get_center(x_ego)[..., :2]
+        c_unpro_pos = self.picker.get_center(unprocessed_pos)[..., :2]
         
-        f_map = self.mfe(f_map)
-        f_map = self.se(f_map)
+        # Compute distances and angles of all pixels
+        direction_vectors = map_pos - c_unpro_pos          # (batch, a*a, 2)
+        map_pos = direction_vectors
+        distances = torch.norm(direction_vectors, dim=-1) * seg_mask   # (batch, a*a)
+
+        # Compute distances and angles of all neighbors
+        # Mask neighbors
+        nei_mask = torch.sum(x_nei.abs(), dim=[-1, -2]) < (0.05 * INF)
+        nei_mask = nei_mask.to(dtype=torch.int32)
+        masked_nei = x_nei * nei_mask[..., None, None]
+        nei_direction_vectors = (masked_nei[..., -1, :] - 
+                                 x_ego[..., -1:, :])
+        nei_distances = torch.norm(nei_direction_vectors, dim=-1)
+
+        # Combine virtue agents with neighbors
+        all_distances = torch.concat([nei_distances, distances], dim=-1)
+        all_distances_inf = torch.where(
+            all_distances==0,
+            torch.tensor(INF, dtype=all_distances.dtype, device=all_distances.device),
+            all_distances
+        )
+        map_pos_trajs = map_pos.unsqueeze(2).expand(
+            map_pos.shape[0], 
+            map_pos.shape[1], 
+            self.args.obs_frames, 
+            self.dim) * seg_mask[..., None, None]
+        all_nei_trajs = torch.concat(
+            [masked_nei, map_pos_trajs],
+            dim=1
+        )
+
+        # top max agents distance index
+        # topk_indices shape: [bs, max_agents]
+        _, topk_indices = torch.topk(all_distances_inf, k=self.args.max_agents, dim=1, largest=False)
+
+        batch_indices = torch.arange(all_nei_trajs.size(0), device=all_nei_trajs.device).unsqueeze(1)
+        x_nei_both = all_nei_trajs[batch_indices, topk_indices] 
+
 
         group_mask, trajs_group, f_ego, socialality, nei_pred_train, y_nei, grouping_justifications = self.grouping(
             x_ego, 
-            x_nei, 
+            x_nei,
+            x_nei_both,
             training)
 
         if self.r.use_team_group_mask:
@@ -211,11 +272,6 @@ class SocialalityMapModel(Model):
 
         f = torch.concat([f_ego, f_group, f_out_group], dim=-1)
         f = self.concat_fc(f)
-
-        f = self.se(f)
-
-        f = torch.concat([f, f_map], dim=-1)
-        f = self.concat_fc_final(f)
 
         # ------------------------------------
         # MARK: - Backbone (Transformer & MSN)
