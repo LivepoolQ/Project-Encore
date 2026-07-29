@@ -2,7 +2,7 @@
 @Author: Ziqian Zou
 @Date: 2026-01-22 09:48:21
 @LastEditors: Ziqian Zou
-@LastEditTime: 2026-07-29 12:12:09
+@LastEditTime: 2026-07-29 15:09:30
 @Description: file content
 @Github: https://github.com/LivepoolQ
 @Copyright 2026 Ziqian Zou, All Rights Reserved.
@@ -223,7 +223,6 @@ class SocialalityMapModel(Model):
         batch_indices = torch.arange(all_nei_trajs.size(0), device=all_nei_trajs.device).unsqueeze(1)
         x_nei_both = all_nei_trajs[batch_indices, topk_indices] 
 
-
         group_mask, trajs_group, f_ego, socialality, nei_pred_train, y_nei, grouping_justifications = self.grouping(
             x_ego, 
             x_nei,
@@ -239,7 +238,8 @@ class SocialalityMapModel(Model):
         # ----------------------------
         f_group, f_out_group = self.perception(
             x_ego, 
-            x_nei, 
+            # x_nei,
+            x_nei_both, 
             group_mask, 
             trajs_group)
 
