@@ -1,9 +1,12 @@
 import numpy as np
 import torch
+
+from qpid.model import layers
+
 from ..egoPredictor import EgoPredictor, LinearPrediction
 from ..utils import Gate
 
-from qpid.model import layers
+MU = 0.00000001
 
 
 class GroupingKernel(torch.nn.Module):
@@ -144,7 +147,7 @@ class GroupingKernel(torch.nn.Module):
 
             # Mix up time axis
             nei_trajs = torch.concat([
-                nei_trajs[..., -self.t_h:, :],
+                nei_trajs_both[..., -self.t_h:, :],
                 y_nei], dim=-2
             )
             ego_traj = torch.concat([
@@ -253,13 +256,14 @@ class GroupingKernel(torch.nn.Module):
             IDs = np.array([[f'b{m}_n{n}' for n in range(N)] for m in range(M)])
 
             from qpid.utils import get_mask
+
             # Remove invalid trajectories.
             mask = get_mask(nei_trajs.abs().sum([-1, -2]))
             idx = torch.where(mask.bool())
 
             IDs = list(IDs[idx])
 
-            from .utils import vis_socialality
+            from ..utils import vis_socialality
             vis_socialality(socialality, IDs)
 
         # grouping agents using predicted socialality factor

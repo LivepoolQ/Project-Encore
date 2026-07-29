@@ -199,6 +199,13 @@ class SocialalityMapModel(Model):
                                  x_ego[..., -1:, :])
         nei_distances = torch.norm(nei_direction_vectors, dim=-1)
 
+        # Set invalid neighbor as INF
+        nei_distances = torch.where(
+            nei_mask.bool(),
+            nei_distances,
+            torch.tensor(INF, dtype=nei_distances.dtype, device=nei_distances.device)
+        )
+
         # Combine virtue agents with neighbors
         all_distances = torch.concat([nei_distances, distances], dim=-1)
         all_distances_inf = torch.where(
