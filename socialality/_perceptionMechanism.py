@@ -137,7 +137,7 @@ class HumanPerception(torch.nn.Module):
         nei_dir = nei_dir % (2*np.pi)
 
         if self.adaptive_fov:
-            self.view_angle = self.fov_encoding(nei_dir) * (np.pi/2) + 1.5 * np.pi
+            self.view_angle = (self.fov_encoding(nei_dir) + 1) * np.pi
 
         # mask neighbors
         nei_mask = (
